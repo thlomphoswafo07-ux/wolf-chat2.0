@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wolf Chat</title>
+  
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div id="loading-screen">
+    <div class="wolf-logo">🐺</div>
+    <h2>WOLF CHAT</h2>
+    <div class="progress-container">
+      <div id="progress-bar"></div>
+    </div>
+    <div class="developer-credit-node">BY THLOMPHO SWAFO</div>
+  </div>
+
+  <div id="desktop-ambient-viewport">
+    <div id="app-wallpaper-shroud"></div>
+
+    <div id="auth-screen">
+      <div class="auth-box">
+        <div class="auth-brand-header">
+          <span class="brand-glyph">🐺</span>
+          <h2 id="auth-title">Welcome to Wolf Chat</h2>
+        </div>
+        
+        <div class="input-group">
+          <label>Email Address</label>
+          <input type="email" id="auth-email" placeholder="you@example.com">
+        </div>
+        <div class="input-group">
+          <label>Password</label>
+          <input type="password" id="auth-password" placeholder="••••••••">
+        </div>
+
+        <div id="signup-extra-fields" style="display: none;">
+          <div class="input-group">
+            <label>Username</label>
+            <input type="text" id="username" placeholder="Choose a username...">
+          </div>
+          <div class="input-group">
+            <label>Profile Icon</label>
+            <select id="auth-pfp-select">
+              <option value="🐺">Wolf</option>
+              <option value="🥷">Ninja</option>
+              <option value="🦾">Cyber</option>
+              <option value="⚡">Volt</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label>Name Color</label>
+            <input type="color" id="color-picker" value="#39ff14">
+          </div>
+        </div>
+
+        <button class="prime-action-btn" id="auth-main-btn" onclick="handleAuthSubmit()">Sign In</button>
+        
+        <div style="margin: 20px 0 10px 0; text-align: center; color: #526676; font-size: 11px; letter-spacing: 1px;">OR CONTINUE WITH</div>
+        <div style="display: flex; gap: 10px;">
+          <button class="prime-action-btn" style="background: rgba(0, 235, 255, 0.1); border-color: #00ebff; color: #00ebff; font-size: 11px;" onclick="handleGoogleSignIn()">🌐 Google</button>
+          <button class="prime-action-btn" style="background: rgba(57, 255, 20, 0.1); border-color: #39ff14; color: #39ff14; font-size: 11px;" onclick="handleFacebookSignIn()">📘 Facebook</button>
+        </div>
+
+        <div class="developer-credit-node" style="margin-top:25px; cursor:pointer; color:#00ebff;" id="auth-toggle-mode" onclick="toggleAuthMode()">
+          Don't have an account? Sign up here
+        </div>
+      </div>
+    </div>
+
+    <div id="chat-container" style="display: none;">
+      
+      <div id="chat-sidebar" class="sidebar-hidden">
+        <div id="sidebar-main-view">
+          <div class="sidebar-header">
+            <h1 class="panel-title">CHANNELS</h1>
+          </div>
+          
+          <div class="sidebar-scrollable-zone">
+            <div class="navigation-group">
+              <span class="group-label">Rooms</span>
+              <button class="navigation-item active-room" onclick="switchChannel('General-Alpha')">🌐 General-Alpha</button>
+              <button class="navigation-item" onclick="switchChannel('Shadow-Sector')">🔒 Shadow-Sector</button>
+            </div>
+            <div class="navigation-group">
+              <span class="group-label">Online Users (<span id="user-counter">0</span>)</span>
+              <div id="active-users-list"></div>
+            </div>
+          </div>
+
+          <div class="sidebar-footer">
+            <button class="settings-trigger-btn" onclick="openSettingsModal()">⚙️ Settings</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="chat-main">
+        <div id="chat-header">
+          <button id="hamburger-menu-btn" onclick="toggleSidebarMenu()">☰</button>
+          <div id="current-room-display">Room: General-Alpha</div>
+          <div class="header-right-cluster">
+            <div id="session-status-display">
+              <span class="status-node pulse"></span> Online since: <span id="session-login-time">00:00</span>
+            </div>
+            <div id="user-display-container">
+              <span id="user-display">---</span>
+              <div id="header-pfp" class="user-pfp-small">🐺</div>
+            </div>
+          </div>
+        </div>
+
+        <div id="messages"></div>
+        <div id="typing-indicator"></div>
+
+        <div id="media-preview-tray">
+          <div id="preview-content"></div>
+          <button class="close-modal-btn" onclick="cancelMediaSelection()">✕</button>
+        </div>
+
+        <div id="input-area-wrapper">
+          <div id="attachment-drawer-hud">
+            <button class="drawer-action-node" onclick="triggerImageUpload()">🖼️ Upload Image</button>
+            <input type="file" id="hidden-file-input" accept="image/*" style="display: none;" onchange="handleImageSelect(event)">
+            <div class="drawer-sticker-separator"><span>STICKERS</span></div>
+            <div class="sticker-grid-layout">
+              <button class="sticker-item" onclick="injectSticker('🔥')">🔥</button>
+              <button class="sticker-item" onclick="injectSticker('👑')">👑</button>
+              <button class="sticker-item" onclick="injectSticker('👾')">👾</button>
+              <button class="sticker-item" onclick="injectSticker('🎯')">🎯</button>
+            </div>
+          </div>
+
+          <div id="input-area">
+            <button id="plus-attach-btn" class="utility-toggle-trigger" onclick="toggleAttachmentMenu()">+</button>
+            <button id="mic-record-btn" class="mic-standalone-btn" onclick="toggleRecording()">🎤</button>
+            <input type="text" id="msg-input" placeholder="Type a message..." oninput="handleInputUpdate()" onkeydown="if(event.key==='Enter') sendMessage()">
+            <span id="char-counter-node">0 / 250</span>
+            <button class="deck-transmit-btn" onclick="sendMessage()">SEND</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="settings-modal" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3>Profile Settings</h3>
+        <button class="close-modal-btn" onclick="closeSettingsModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        
+        <div class="input-group">
+          <label>Update Profile Picture</label>
+          <div class="settings-pfp-uploader-row">
+            <div id="settings-pfp-preview-circle" class="user-pfp-small">🐺</div>
+            <button class="drawer-action-node" type="button" onclick="document.getElementById('settings-gallery-input').click()">🖼️ Choose File</button>
+            <input type="file" id="settings-gallery-input" accept="image/*" style="display: none;" onchange="handleSettingsImageSelect(event)">
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label>Change Username</label>
+          <input type="text" id="settings-username-input">
+        </div>
+        <div class="input-group">
+          <label>Name Color</label>
+          <select id="settings-color-select">
+            <option value="#39ff14">Neon Green</option>
+            <option value="#00ebff">Electric Blue</option>
+            <option value="#ff007f">Neon Pink</option>
+            <option value="#ffaa00">Cyber Orange</option>
+          </select>
+        </div>
+        
+        <button class="save-profile-btn" onclick="saveSystemSettings()">Save Changes</button>
+        <hr class="modal-divider">
+        <button class="logout-btn-modal" onclick="handleLogout()">Log Out</button>
+      </div>
+    </div>
+  </div>
+
+  <audio id="notif-sound" src="https://assets.mixkit.co/active_storage/sfx/2357/2357-84.wav" preload="auto"></audio>
+
+  <script src="script.js"></script>
+</body>
+</html>
