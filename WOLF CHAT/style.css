@@ -203,3 +203,88 @@ body {
 @keyframes smoothPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
 .pulse { animation: statusPulse 2s infinite; }
 @keyframes statusPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+/* ==========================================================================
+   --- NEW TABLET & MOBILE RESPONSIVE ENGINE (ADDED) ---
+   ========================================================================== */
+
+/* --- TABLET ADJUSTMENTS --- */
+@media screen and (max-width: 1024px) {
+  #chat-container {
+    width: 96vw;
+    height: 92vh;
+  }
+}
+
+/* --- MOBILE PHONE ADJUSTMENTS --- */
+@media screen and (max-width: 768px) {
+  /* Let container fill up the mobile screen safely */
+  #chat-container {
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0px;
+    border: none;
+  }
+
+  /* Make sure the main layout has breathing room around the chat */
+  #chat-main {
+    width: 100%;
+  }
+
+  /* Shrink your loading text so it stays on one line */
+  #loading-screen h2 {
+    font-size: 0.9rem;
+    letter-spacing: 3px;
+  }
+
+  /* Keep the custom login container perfectly centered and sized */
+  #auth-screen {
+    max-width: 100%;
+    padding: 15px;
+  }
+  .auth-box {
+    padding: 30px 20px;
+  }
+
+  /* Shrink the top header bar cluster to save vital phone screen space */
+  #chat-header {
+    padding: 0 16px;
+    height: 60px;
+  }
+  .header-right-cluster {
+    gap: 10px;
+  }
+  #session-status-display {
+    display: none; /* Hides session timer node ONLY on phones so it doesn't squish your header items */
+  }
+
+  /* Let chat bubble messages use more space horizontally on phone widths */
+  .msg {
+    max-width: 88%;
+    padding: 10px 12px;
+  }
+
+  /* Stop input element items from pushing past the mobile screen borders */
+  #input-area {
+    padding: 12px 16px;
+    gap: 8px;
+  }
+  #input-area input {
+    padding: 12px 85px 12px 14px;
+    font-size: 0.88rem;
+  }
+  #char-counter-node {
+    right: 135px;
+  }
+  .deck-transmit-btn {
+    padding: 12px 16px;
+    font-size: 0.85rem;
+  }
+
+  /* Attachment HUD optimization for small screens */
+  #attachment-drawer-hud {
+    width: calc(100% - 32px);
+    left: 16px;
+    bottom: 65px;
+  }
+}
