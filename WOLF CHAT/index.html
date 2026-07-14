@@ -138,11 +138,17 @@
           </div>
 
           <div id="input-area">
-            <button id="plus-attach-btn" class="utility-toggle-trigger" onclick="toggleAttachmentMenu()">+</button>
-            <button id="mic-record-btn" class="mic-standalone-btn" onclick="toggleRecording()">🎤</button>
-            <input type="text" id="msg-input" placeholder="Type a message..." oninput="handleInputUpdate()" onkeydown="if(event.key==='Enter') sendMessage()">
-            <span id="char-counter-node">0 / 250</span>
-            <button class="deck-transmit-btn" onclick="sendMessage()">SEND</button>
+            
+            <div class="whatsapp-input-pill-container">
+              <input type="text" id="msg-input" placeholder="Type a message..." oninput="handleInputUpdate()" onkeydown="if(event.key==='Enter') sendMessage()">
+              
+              <span id="char-counter-node">0 / 250</span>
+              
+              <button id="plus-attach-btn" class="utility-toggle-trigger" onclick="toggleAttachmentMenu()">+</button>
+            </div>
+
+            <button id="mic-record-btn" class="mic-standalone-btn" onclick="toggleRecording() || sendMessage()">🎤</button>
+
           </div>
         </div>
       </div>
