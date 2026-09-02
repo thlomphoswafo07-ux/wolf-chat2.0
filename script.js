@@ -13,14 +13,15 @@ import {
   serverTimestamp 
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-// Your Firebase Config
+// Your Actual Firebase Config
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_AUTH_DOMAIN",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyBzIGdwodKyZ09EWxaJeWir0tJ2ECJ1RtM",
+  authDomain: "wolf-chat-b0153.firebaseapp.com",
+  databaseURL: "https://wolf-chat-b0153-default-rtdb.firebaseio.com",
+  projectId: "wolf-chat-b0153",
+  storageBucket: "wolf-chat-b0153.firebasestorage.app",
+  messagingSenderId: "810966020901",
+  appId: "1:810966020901:web:4e5cfefca32b00cc45a0cc"
 };
 
 // Initialize Firebase
@@ -32,11 +33,10 @@ const messageInput = document.getElementById("messageInput");
 const sendBtn = document.getElementById("sendBtn");
 const chatBox = document.getElementById("chatBox");
 
-// 1. REAL-TIME MESSAGE LISTENER (Fixes Syncing)
+// 1. REAL-TIME MESSAGE LISTENER
 function listenForMessages() {
   const q = query(collection(db, "messages"), orderBy("timestamp", "asc"));
 
-  // onSnapshot updates the screen instantly whenever a new message is added anywhere
   onSnapshot(q, (snapshot) => {
     if (!chatBox) return;
     chatBox.innerHTML = ""; // Clear old view
@@ -46,12 +46,10 @@ function listenForMessages() {
       const msgDiv = document.createElement("div");
       msgDiv.classList.add("message");
       
-      // Render text and sender
       msgDiv.innerHTML = `<strong>${msg.sender || 'User'}:</strong> ${msg.text}`;
       chatBox.appendChild(msgDiv);
     });
 
-    // Auto-scroll to the bottom for new messages
     chatBox.scrollTop = chatBox.scrollHeight;
   }, (error) => {
     console.error("Error listening for real-time messages:", error);
@@ -67,10 +65,10 @@ async function sendMessage() {
     try {
       await addDoc(collection(db, "messages"), {
         text: text,
-        sender: "Me", // Replace with logged in user name later
+        sender: "Me",
         timestamp: serverTimestamp()
       });
-      messageInput.value = ""; // Clear input after sending
+      messageInput.value = "";
     } catch (e) {
       console.error("Error sending message: ", e);
     }
@@ -90,5 +88,5 @@ if (messageInput) {
   });
 }
 
-// Start listening as soon as page loads
+// Start listening when page loads
 listenForMessages();
