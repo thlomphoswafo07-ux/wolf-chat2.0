@@ -1,5 +1,5 @@
 // ==========================================
-// WolfChat 2.0 Engine - Complete Build
+// Original Wolf Chat Engine Code
 // ==========================================
 
 const firebaseConfig = {
@@ -22,24 +22,22 @@ const auth = firebase.auth();
 let currentUser = null;
 let userProfileData = {};
 let currentChatId = "General-Alpha";
-let isDM = false;
 let messageUnsubscribe = null;
 let isInitialLoad = true;
 let selectedImageData = null;
 
-// Voice Recorder
+// Voice Recorder variables
 let mediaRecorder = null;
 let audioChunks = [];
 let isRecording = false;
 
-// 1. Loading Timer & Lifecycle
+// 1. Loading Timer & Authentication Observer
 window.addEventListener("DOMContentLoaded", () => {
   const loadingScreen = document.getElementById("loading-screen");
   const progressBar = document.getElementById("progress-bar");
 
   if (progressBar) progressBar.style.width = "100%";
 
-  // Fixed 4-second delay
   setTimeout(() => {
     if (loadingScreen) loadingScreen.style.display = "none";
   }, 4000);
@@ -56,9 +54,6 @@ window.addEventListener("DOMContentLoaded", () => {
       if (chatContainer) chatContainer.style.display = "flex";
       
       updateUserHeader();
-      updateUserOnlineStatus();
-      loadHomeData();
-      loadDMUsers();
       listenForMessages();
 
       document.body.addEventListener('click', unlockAudio, { once: true });
@@ -104,148 +99,15 @@ function updateUserHeader() {
   if (headerPfp) headerPfp.innerText = icon;
 }
 
-function updateUserOnlineStatus() {
-  if (!currentUser) return;
-  db.collection("users").doc(currentUser.uid).set({
-    uid: currentUser.uid,
-    username: userProfileData.username || currentUser.displayName || currentUser.email.split("@")[0],
-    email: currentUser.email,
-    color: userProfileData.color || "#39ff14",
-    pfpIcon: userProfileData.pfpIcon || "🐺",
-    lastActive: firebase.firestore.FieldValue.serverTimestamp()
-  }, { merge: true });
-}
-
-// 2. Home Hub & Follower Engine
-function showHomeTab() {
-  document.getElementById("chat-view").style.display = "none";
-  document.getElementById("home-view").style.display = "block";
-  document.getElementById("active-chat-title").innerText = "🏠 Home Hub";
-  document.getElementById("target-last-active").innerText = "";
-  toggleSidebarMenu();
-}
-
-function loadHomeData() {
-  if (!currentUser) return;
-
-  // Follow Requests
-  db.collection("users").doc(currentUser.uid).collection("requests").onSnapshot((snapshot) => {
-    const reqContainer = document.getElementById("follow-requests-list");
-    if (!reqContainer) return;
-    reqContainer.innerHTML = "";
-
-    if (snapshot.empty) {
-      reqContainer.innerHTML = "<p style='font-size:12px; opacity:0.6;'>No pending requests.</p>";
-    }
-
-    snapshot.forEach((doc) => {
-      const reqData = doc.data();
-      const div = document.createElement("div");
-      div.style.cssText = "display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.05); padding:8px; margin-bottom:5px; border-radius:5px;";
-      div.innerHTML = `
-        <span>${reqData.fromUsername}</span>
-        <button onclick="acceptFollowRequest('${reqData.fromUid}', '${reqData.fromUsername}')" style="background:#39ff14; color:#000; border:none; padding:5px 10px; border-radius:3px; cursor:pointer;">Accept</button>
-      `;
-      reqContainer.appendChild(div);
-    });
-  });
-
-  // User Suggestions
-  db.collection("users").onSnapshot((snapshot) => {
-    const sugContainer = document.getElementById("suggested-users-list");
-    if (!sugContainer) return;
-    sugContainer.innerHTML = "";
-
-    snapshot.forEach((doc) => {
-      const userData = doc.data();
-      if (userData.uid === currentUser.uid) return;
-
-      const div = document.createElement("div");
-      div.style.cssText = "display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.05); padding:8px; margin-bottom:5px; border-radius:5px;";
-      div.innerHTML = `
-        <span style="color:${userData.color || '#fff'}">${userData.pfpIcon || '👤'} ${userData.username || 'User'}</span>
-        <button onclick="sendFollowRequest('${userData.uid}')" style="background:#00ebff; color:#000; border:none; padding:5px 10px; border-radius:3px; cursor:pointer;">Follow</button>
-      `;
-      sugContainer.appendChild(div);
-    });
-  });
-}
-
-window.sendFollowRequest = async function(targetUid) {
-  try {
-    await db.collection("users").doc(targetUid).collection("requests").doc(currentUser.uid).set({
-      fromUid: currentUser.uid,
-      fromUsername: userProfileData.username || currentUser.displayName || currentUser.email.split("@")[0],
-      timestamp: firebase.firestore.FieldValue.serverTimestamp()
-    });
-    alert("Follow request sent!");
-  } catch(e) {
-    alert("Error: " + e.message);
-  }
-};
-
-window.acceptFollowRequest = async function(fromUid, fromUsername) {
-  try {
-    await db.collection("users").doc(currentUser.uid).collection("following").doc(fromUid).set({
-      uid: fromUid,
-      username: fromUsername
-    });
-    await db.collection("users").doc(fromUid).collection("following").doc(currentUser.uid).set({
-      uid: currentUser.uid,
-      username: userProfileData.username || currentUser.displayName || currentUser.email.split("@")[0]
-    });
-
-    await db.collection("users").doc(currentUser.uid).collection("requests").doc(fromUid).delete();
-    alert("Follow request accepted!");
-  } catch(e) {
-    alert("Error: " + e.message);
-  }
-};
-
-// 3. DM Navigation
-function loadDMUsers() {
-  const dmContainer = document.getElementById("dm-users-list");
-  if (!dmContainer) return;
-
-  db.collection("users").doc(currentUser.uid).collection("following").onSnapshot((snapshot) => {
-    dmContainer.innerHTML = "";
-    snapshot.forEach((doc) => {
-      const userData = doc.data();
-      const userBtn = document.createElement("button");
-      userBtn.classList.add("navigation-item");
-      userBtn.style.cssText = "display:block; width:100%; text-align:left; margin:5px 0;";
-      userBtn.innerText = `💬 ${userData.username}`;
-      userBtn.onclick = () => startDM(userData);
-      dmContainer.appendChild(userBtn);
-    });
-  });
-}
-
-function startDM(targetUser) {
-  document.getElementById("home-view").style.display = "none";
-  document.getElementById("chat-view").style.display = "flex";
-  
-  isDM = true;
-  const ids = [currentUser.uid, targetUser.uid].sort();
-  currentChatId = `dm_${ids[0]}_${ids[1]}`;
-
-  document.getElementById("active-chat-title").innerText = `@ ${targetUser.username}`;
-  listenForMessages();
-  toggleSidebarMenu();
-}
-
+// 2. Room Navigation
 window.switchChannel = function (channelName) {
-  document.getElementById("home-view").style.display = "none";
-  document.getElementById("chat-view").style.display = "flex";
-
-  isDM = false;
   currentChatId = channelName;
   document.getElementById("active-chat-title").innerText = `Room: ${channelName}`;
   listenForMessages();
   toggleSidebarMenu();
 };
 
-// 4. Message Stream & Audio Alerts
+// 3. Message Streaming & Audio Alerts
 function listenForMessages() {
   if (messageUnsubscribe) messageUnsubscribe();
 
@@ -253,9 +115,7 @@ function listenForMessages() {
   const notifSound = document.getElementById("notif-sound");
   isInitialLoad = true;
 
-  const collectionRef = isDM 
-    ? db.collection("direct_messages").doc(currentChatId).collection("messages")
-    : db.collection("channels").doc(currentChatId).collection("messages");
+  const collectionRef = db.collection("channels").doc(currentChatId).collection("messages");
 
   messageUnsubscribe = collectionRef.orderBy("timestamp", "asc").onSnapshot((snapshot) => {
     if (!messagesContainer) return;
@@ -301,7 +161,7 @@ function listenForMessages() {
   });
 }
 
-// 5. Send Text, Media & Audio Voice
+// 4. Send Messaging Logic
 window.sendMessage = async function () {
   const input = document.getElementById("msg-input");
   const text = input ? input.value.trim() : "";
@@ -309,9 +169,7 @@ window.sendMessage = async function () {
   if ((text === "" && !selectedImageData) || !currentUser) return;
 
   try {
-    const collectionRef = isDM 
-      ? db.collection("direct_messages").doc(currentChatId).collection("messages")
-      : db.collection("channels").doc(currentChatId).collection("messages");
+    const collectionRef = db.collection("channels").doc(currentChatId).collection("messages");
 
     const payload = {
       sender: userProfileData.username || currentUser.displayName || currentUser.email.split("@")[0],
@@ -335,6 +193,7 @@ window.sendMessage = async function () {
   }
 };
 
+// 5. Voice Notes
 window.toggleVoiceRecording = async function () {
   const micBtn = document.getElementById("mic-record-btn");
 
@@ -351,9 +210,7 @@ window.toggleVoiceRecording = async function () {
         reader.readAsDataURL(audioBlob);
         reader.onloadend = async () => {
           const base64Audio = reader.result;
-          const collectionRef = isDM 
-            ? db.collection("direct_messages").doc(currentChatId).collection("messages")
-            : db.collection("channels").doc(currentChatId).collection("messages");
+          const collectionRef = db.collection("channels").doc(currentChatId).collection("messages");
 
           await collectionRef.add({
             audioUrl: base64Audio,
@@ -380,6 +237,7 @@ window.toggleVoiceRecording = async function () {
   }
 };
 
+// 6. Media Attachment Drawers
 window.toggleAttachmentMenu = function () {
   const drawer = document.getElementById("attachment-drawer-hud");
   if (drawer) drawer.style.display = drawer.style.display === "none" ? "block" : "none";
@@ -414,7 +272,7 @@ window.injectSticker = function (stickerEmoji) {
   toggleAttachmentMenu();
 };
 
-// 6. Settings & Profile Changes
+// 7. Settings & Account Profile
 window.saveSystemSettings = async function () {
   const newUsername = document.getElementById("settings-username-input").value.trim();
   const newIcon = document.getElementById("settings-pfp-select")?.value;
@@ -450,7 +308,7 @@ window.saveSystemSettings = async function () {
   }
 };
 
-// 7. Auth Handlers
+// 8. Authentication Actions
 window.toggleAuthMode = function () {
   const extraFields = document.getElementById("signup-extra-fields");
   const mainBtn = document.getElementById("auth-main-btn");
@@ -482,7 +340,7 @@ window.handleAuthSubmit = async function () {
         await userCred.user.updateProfile({ displayName: username });
       }
       userProfileData = { username: username || email.split("@")[0], color: color || "#39ff14", pfpIcon: icon || "🐺" };
-      updateUserOnlineStatus();
+      await db.collection("users").doc(userCred.user.uid).set(userProfileData);
     } else {
       await auth.signInWithEmailAndPassword(email, password);
     }
@@ -495,7 +353,6 @@ window.handleGoogleSignIn = async function () {
   const provider = new firebase.auth.GoogleAuthProvider();
   try {
     await auth.signInWithPopup(provider);
-    updateUserOnlineStatus();
   } catch (err) {
     alert("Google error: " + err.message);
   }
@@ -505,7 +362,6 @@ window.handleFacebookSignIn = async function () {
   const provider = new firebase.auth.FacebookAuthProvider();
   try {
     await auth.signInWithPopup(provider);
-    updateUserOnlineStatus();
   } catch (err) {
     alert("Facebook error: " + err.message);
   }
