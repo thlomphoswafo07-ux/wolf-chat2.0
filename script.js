@@ -1,5 +1,5 @@
 // ==========================================
-// WolfChat 2.0 Engine - Real-Time Compat
+// WolfChat 2.0 Engine - DM & Live Sync Fixed
 // ==========================================
 
 const firebaseConfig = {
@@ -20,9 +20,12 @@ const db = firebase.firestore();
 const auth = firebase.auth();
 
 let currentUser = null;
-let currentChannel = "General-Alpha";
-let isInitialLoad = true; // Tracks initial fetch to prevent sound on existing messages
+let currentChatId = "General-Alpha";
+let isDM = false;
+let messageUnsubscribe = null;
+let isInitialLoad = true;
 
+// 1. App Startup & Auth
 window.addEventListener("DOMContentLoaded", () => {
   const loadingScreen = document.getElementById("loading-screen");
   const progressBar = document.getElementById("progress-bar");
@@ -42,10 +45,13 @@ window.addEventListener("DOMContentLoaded", () => {
       if (authScreen) authScreen.style.display = "none";
       if (chatContainer) chatContainer.style.display = "flex";
       
-      const userDisplay = document.getElementById("user-display");
-      if (userDisplay) userDisplay.innerText = user.displayName || user.email.split("@")[0];
-
+      updateUserHeader();
+      updateUserOnlineStatus();
+      loadDMUsers();
       listenForMessages();
+
+      // Enable Web Audio unlock on user interaction
+      document.body.addEventListener('click', unlockAudio, { once: true });
     } else {
       currentUser = null;
       if (authScreen) authScreen.style.display = "flex";
@@ -54,72 +60,160 @@ window.addEventListener("DOMContentLoaded", () => {
   });
 });
 
-// Helper function to format timestamp into WhatsApp-style time (e.g. 14:30)
-function formatTime(timestamp) {
-  if (!timestamp) return "Just now";
-  const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+function unlockAudio() {
+  const notifSound = document.getElementById("notif-sound");
+  if (notifSound) {
+    notifSound.play().then(() => {
+      notifSound.pause();
+      notifSound.currentTime = 0;
+    }).catch(() => {});
+  }
 }
 
-// REAL-TIME LISTENER WITH TIMESTAMPS AND SOUND
+function updateUserHeader() {
+  if (!currentUser) return;
+  const userDisplay = document.getElementById("user-display");
+  if (userDisplay) {
+    userDisplay.innerText = currentUser.displayName || currentUser.email.split("@")[0];
+  }
+}
+
+// 2. Track "Last Active" status for DMs
+function updateUserOnlineStatus() {
+  if (!currentUser) return;
+  db.collection("users").doc(currentUser.uid).set({
+    uid: currentUser.uid,
+    username: currentUser.displayName || currentUser.email.split("@")[0],
+    email: currentUser.email,
+    lastActive: firebase.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+}
+
+// 3. Render DM Users List
+function loadDMUsers() {
+  const dmContainer = document.getElementById("dm-users-list");
+  if (!dmContainer) return;
+
+  db.collection("users").onSnapshot((snapshot) => {
+    dmContainer.innerHTML = "";
+    snapshot.forEach((doc) => {
+      const userData = doc.data();
+      if (currentUser && userData.uid === currentUser.uid) return; // Skip showing yourself in DM list
+
+      const userBtn = document.createElement("button");
+      userBtn.classList.add("navigation-item");
+      userBtn.style.display = "block";
+      userBtn.style.width = "100%";
+      userBtn.style.textAlign = "left";
+      userBtn.style.margin = "5px 0";
+
+      userBtn.innerText = `💬 ${userData.username || 'User'}`;
+      userBtn.onclick = () => startDM(userData);
+
+      dmContainer.appendChild(userBtn);
+    });
+  });
+}
+
+// 4. Calculate relative time ("45 minutes ago")
+function formatLastActive(timestamp) {
+  if (!timestamp) return "Offline";
+  const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+  const now = new Date();
+  const diffMinutes = Math.floor((now - date) / 60000);
+
+  if (diffMinutes < 1) return "Active just now";
+  if (diffMinutes < 60) return `Active ${diffMinutes} minutes ago`;
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `Active ${diffHours} hours ago`;
+  return `Active ${Math.floor(diffHours / 24)} days ago`;
+}
+
+// 5. Switch to a 1-on-1 Direct Message
+function startDM(targetUser) {
+  isDM = true;
+  // Generate deterministic unique DM chat ID for two users
+  const ids = [currentUser.uid, targetUser.uid].sort();
+  currentChatId = `dm_${ids[0]}_${ids[1]}`;
+
+  const titleNode = document.getElementById("active-chat-title");
+  const statusNode = document.getElementById("target-last-active");
+
+  if (titleNode) titleNode.innerText = `@ ${targetUser.username}`;
+  if (statusNode) statusNode.innerText = formatLastActive(targetUser.lastActive);
+
+  listenForMessages();
+  toggleSidebarMenu();
+}
+
+// 6. Switch back to Global Room
+window.switchChannel = function (channelName) {
+  isDM = false;
+  currentChatId = channelName;
+
+  const titleNode = document.getElementById("active-chat-title");
+  const statusNode = document.getElementById("target-last-active");
+
+  if (titleNode) titleNode.innerText = `Room: ${channelName}`;
+  if (statusNode) statusNode.innerText = "";
+
+  listenForMessages();
+  toggleSidebarMenu();
+};
+
+// 7. Real-Time Message Listener with Sound Alert
 function listenForMessages() {
+  if (messageUnsubscribe) messageUnsubscribe(); // Stop listening to previous chat room
+
   const messagesContainer = document.getElementById("messages");
   const notifSound = document.getElementById("notif-sound");
-
   isInitialLoad = true;
 
-  db.collection("channels")
-    .doc(currentChannel)
-    .collection("messages")
-    .orderBy("timestamp", "asc")
-    .onSnapshot((snapshot) => {
-      if (!messagesContainer) return;
+  const collectionRef = isDM 
+    ? db.collection("direct_messages").doc(currentChatId).collection("messages")
+    : db.collection("channels").doc(currentChatId).collection("messages");
 
-      // Detect new incoming message for audio alert
-      snapshot.docChanges().forEach((change) => {
-        if (change.type === "added" && !isInitialLoad) {
-          const msgData = change.doc.data();
-          // Only play notification sound if the message was sent by someone else
-          if (currentUser && msgData.senderId !== currentUser.uid) {
-            if (notifSound) {
-              notifSound.currentTime = 0;
-              notifSound.play().catch(e => console.log("Audio play blocked by browser:", e));
-            }
+  messageUnsubscribe = collectionRef.orderBy("timestamp", "asc").onSnapshot((snapshot) => {
+    if (!messagesContainer) return;
+
+    snapshot.docChanges().forEach((change) => {
+      if (change.type === "added" && !isInitialLoad) {
+        const msgData = change.doc.data();
+        if (currentUser && msgData.senderId !== currentUser.uid) {
+          if (notifSound) {
+            notifSound.currentTime = 0;
+            notifSound.play().catch(e => console.log("Audio play prevented:", e));
           }
         }
-      });
-
-      messagesContainer.innerHTML = "";
-
-      snapshot.forEach((doc) => {
-        const msg = doc.data();
-        const msgElement = document.createElement("div");
-        msgElement.classList.add("message-node");
-
-        const isMe = currentUser && msg.senderId === currentUser.uid;
-        if (isMe) msgElement.classList.add("my-message");
-
-        const timeString = formatTime(msg.timestamp);
-
-        msgElement.innerHTML = `
-          <div class="message-meta">
-            <span class="message-sender">${msg.sender || 'Anonymous'}</span>
-          </div>
-          <div class="message-body">${msg.text}</div>
-          <div class="message-time" style="font-size: 10px; opacity: 0.7; text-align: right; margin-top: 3px;">${timeString}</div>
-        `;
-
-        messagesContainer.appendChild(msgElement);
-      });
-
-      messagesContainer.scrollTop = messagesContainer.scrollHeight;
-      isInitialLoad = false;
-    }, (error) => {
-      console.error("Real-time listener error:", error);
+      }
     });
+
+    messagesContainer.innerHTML = "";
+
+    snapshot.forEach((doc) => {
+      const msg = doc.data();
+      const msgElement = document.createElement("div");
+      msgElement.classList.add("message-node");
+
+      const isMe = currentUser && msg.senderId === currentUser.uid;
+      if (isMe) msgElement.classList.add("my-message");
+
+      msgElement.innerHTML = `
+        <div class="message-meta">
+          <span class="message-sender">${msg.sender || 'Anonymous'}</span>
+        </div>
+        <div class="message-body">${msg.text}</div>
+      `;
+
+      messagesContainer.appendChild(msgElement);
+    });
+
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    isInitialLoad = false;
+  });
 }
 
-// SEND MESSAGE FUNCTION
+// 8. Send Message
 window.sendMessage = async function () {
   const input = document.getElementById("msg-input");
   if (!input) return;
@@ -128,23 +222,56 @@ window.sendMessage = async function () {
   if (text === "" || !currentUser) return;
 
   try {
-    await db.collection("channels")
-      .doc(currentChannel)
-      .collection("messages")
-      .add({
-        text: text,
-        sender: currentUser.displayName || currentUser.email.split("@")[0],
-        senderId: currentUser.uid,
-        timestamp: firebase.firestore.FieldValue.serverTimestamp()
-      });
+    const collectionRef = isDM 
+      ? db.collection("direct_messages").doc(currentChatId).collection("messages")
+      : db.collection("channels").doc(currentChatId).collection("messages");
+
+    await collectionRef.add({
+      text: text,
+      sender: currentUser.displayName || currentUser.email.split("@")[0],
+      senderId: currentUser.uid,
+      timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    });
 
     input.value = "";
     handleInputUpdate();
+    updateUserOnlineStatus(); // Refresh active status when sending
   } catch (error) {
     console.error("Error sending message:", error);
   }
 };
 
+// 9. Save System Settings (FIXED)
+window.saveSystemSettings = async function () {
+  const newUsername = document.getElementById("settings-username-input").value.trim();
+  const newIcon = document.getElementById("settings-pfp-select")?.value;
+
+  if (!currentUser) return;
+
+  try {
+    if (newUsername !== "") {
+      await currentUser.updateProfile({ displayName: newUsername });
+    }
+
+    await db.collection("users").doc(currentUser.uid).set({
+      username: newUsername || currentUser.displayName || currentUser.email.split("@")[0],
+      pfpIcon: newIcon || "🐺"
+    }, { merge: true });
+
+    if (newIcon) {
+      const headerPfp = document.getElementById("header-pfp");
+      if (headerPfp) headerPfp.innerText = newIcon;
+    }
+
+    updateUserHeader();
+    closeSettingsModal();
+    alert("Profile updated successfully!");
+  } catch (err) {
+    alert("Error updating profile: " + err.message);
+  }
+};
+
+// 10. Helper Functions
 window.toggleAuthMode = function () {
   const extraFields = document.getElementById("signup-extra-fields");
   const mainBtn = document.getElementById("auth-main-btn");
@@ -173,8 +300,10 @@ window.handleAuthSubmit = async function () {
       if (username) {
         await userCred.user.updateProfile({ displayName: username });
       }
+      updateUserOnlineStatus();
     } else {
       await auth.signInWithEmailAndPassword(email, password);
+      updateUserOnlineStatus();
     }
   } catch (err) {
     alert("Auth error: " + err.message);
@@ -185,6 +314,7 @@ window.handleGoogleSignIn = async function () {
   const provider = new firebase.auth.GoogleAuthProvider();
   try {
     await auth.signInWithPopup(provider);
+    updateUserOnlineStatus();
   } catch (err) {
     alert("Google Sign-In Error: " + err.message);
   }
@@ -192,13 +322,6 @@ window.handleGoogleSignIn = async function () {
 
 window.handleLogout = function () {
   auth.signOut();
-};
-
-window.switchChannel = function (channelName) {
-  currentChannel = channelName;
-  const roomDisplay = document.getElementById("current-room-display");
-  if (roomDisplay) roomDisplay.innerText = `Room: ${channelName}`;
-  listenForMessages();
 };
 
 window.toggleSidebarMenu = function () {
