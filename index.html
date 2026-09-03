@@ -81,23 +81,25 @@
     <!-- Main Chat Interface -->
     <div id="chat-container" style="display: none;">
       
-      <!-- Channels Sidebar -->
+      <!-- Channels & DM Sidebar -->
       <div id="chat-sidebar" class="sidebar-hidden">
         <div id="sidebar-main-view">
           <div class="sidebar-header" style="display: flex; justify-content: space-between; align-items: center; padding: 0 10px;">
-            <h1 class="panel-title">CHANNELS</h1>
+            <h1 class="panel-title">DIRECT MESSAGES</h1>
             <button class="close-modal-btn" onclick="toggleSidebarMenu()" style="cursor: pointer; background: transparent; border: none; color: #fff; font-size: 18px;">✕</button>
           </div>
           
           <div class="sidebar-scrollable-zone">
             <div class="navigation-group">
-              <span class="group-label">Rooms</span>
+              <span class="group-label">Global Rooms</span>
               <button class="navigation-item active-room" onclick="switchChannel('General-Alpha')">🌐 General-Alpha</button>
-              <button class="navigation-item" onclick="switchChannel('Shadow-Sector')">🔒 Shadow-Sector</button>
             </div>
+            
             <div class="navigation-group">
-              <span class="group-label">Online Users (<span id="user-counter">0</span>)</span>
-              <div id="active-users-list"></div>
+              <span class="group-label">Direct Messages / Follows</span>
+              <div id="dm-users-list">
+                <!-- Registered users appear here with last active status -->
+              </div>
             </div>
           </div>
 
@@ -107,15 +109,15 @@
         </div>
       </div>
 
-      <!-- Active Chat Room Area -->
+      <!-- Active Chat Area -->
       <div id="chat-main">
         <div id="chat-header">
           <button id="hamburger-menu-btn" onclick="toggleSidebarMenu()">☰</button>
-          <div id="current-room-display">Room: General-Alpha</div>
+          <div id="current-room-display">
+            <div id="active-chat-title" style="font-weight: bold;">Room: General-Alpha</div>
+            <div id="target-last-active" style="font-size: 11px; color: #00ebff; opacity: 0.8;"></div>
+          </div>
           <div class="header-right-cluster">
-            <div id="session-status-display">
-              <span class="status-node pulse"></span> Online since: <span id="session-login-time">00:00</span>
-            </div>
             <div id="user-display-container">
               <span id="user-display">---</span>
               <div id="header-pfp" class="user-pfp-small">🐺</div>
@@ -157,7 +159,7 @@
     </div>
   </div>
 
-  <!-- Settings Modal -->
+  <!-- Profile Settings Modal -->
   <div id="settings-modal" class="modal-overlay">
     <div class="modal-box">
       <div class="modal-header">
@@ -166,31 +168,22 @@
       </div>
       <div class="modal-body">
         <div class="input-group">
-          <label>Update Profile Picture</label>
-          <div class="settings-pfp-uploader-row">
-            <div id="settings-pfp-preview-circle" class="user-pfp-small">🐺</div>
-            <button class="drawer-action-node" type="button" onclick="document.getElementById('settings-gallery-input').click()">🖼️ Choose File</button>
-            <input type="file" id="settings-gallery-input" accept="image/*" style="display: none;" onchange="handleSettingsImageSelect(event)">
-          </div>
-        </div>
-
-        <div class="input-group">
-          <label>Change Username</label>
-          <input type="text" id="settings-username-input">
+          <label>Change Display Name</label>
+          <input type="text" id="settings-username-input" placeholder="Enter new username...">
         </div>
         <div class="input-group">
-          <label>Name Color</label>
-          <select id="settings-color-select">
-            <option value="#39ff14">Neon Green</option>
-            <option value="#00ebff">Electric Blue</option>
-            <option value="#ff007f">Neon Pink</option>
-            <option value="#ffaa00">Cyber Orange</option>
+          <label>Profile Icon</label>
+          <select id="settings-pfp-select">
+            <option value="🐺">Wolf</option>
+            <option value="🥷">Ninja</option>
+            <option value="🦾">Cyber</option>
+            <option value="⚡">Volt</option>
           </select>
         </div>
         
-        <button class="save-profile-btn" onclick="saveSystemSettings()">Save Changes</button>
-        <hr class="modal-divider">
-        <button class="logout-btn-modal" onclick="handleLogout()">Log Out</button>
+        <button class="save-profile-btn" onclick="saveSystemSettings()" style="width:100%; padding: 10px; background: #39ff14; color: #000; font-weight: bold; border: none; cursor: pointer; border-radius: 5px;">Save Changes</button>
+        <hr class="modal-divider" style="margin: 15px 0;">
+        <button class="logout-btn-modal" onclick="handleLogout()" style="width:100%; padding: 10px; background: #ff0055; color: #fff; border: none; cursor: pointer; border-radius: 5px;">Log Out</button>
       </div>
     </div>
   </div>
