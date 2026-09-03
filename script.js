@@ -1,5 +1,5 @@
 // ==========================================
-// WolfChat 2.0 Engine - DM & Live Sync Fixed
+// WolfChat 2.0 Engine
 // ==========================================
 
 const firebaseConfig = {
@@ -25,16 +25,22 @@ let isDM = false;
 let messageUnsubscribe = null;
 let isInitialLoad = true;
 
-// 1. App Startup & Auth
+// Voice Recorder Variables
+let mediaRecorder = null;
+let audioChunks = [];
+let isRecording = false;
+
+// 1. Loading Screen & Auth Lifecycle
 window.addEventListener("DOMContentLoaded", () => {
   const loadingScreen = document.getElementById("loading-screen");
   const progressBar = document.getElementById("progress-bar");
 
   if (progressBar) progressBar.style.width = "100%";
 
+  // Fixed exactly to 4 seconds (4000ms)
   setTimeout(() => {
     if (loadingScreen) loadingScreen.style.display = "none";
-  }, 800);
+  }, 4000);
 
   auth.onAuthStateChanged((user) => {
     const authScreen = document.getElementById("auth-screen");
@@ -47,10 +53,10 @@ window.addEventListener("DOMContentLoaded", () => {
       
       updateUserHeader();
       updateUserOnlineStatus();
+      loadHomeData();
       loadDMUsers();
       listenForMessages();
 
-      // Enable Web Audio unlock on user interaction
       document.body.addEventListener('click', unlockAudio, { once: true });
     } else {
       currentUser = null;
@@ -78,7 +84,6 @@ function updateUserHeader() {
   }
 }
 
-// 2. Track "Last Active" status for DMs
 function updateUserOnlineStatus() {
   if (!currentUser) return;
   db.collection("users").doc(currentUser.uid).set({
@@ -89,81 +94,140 @@ function updateUserOnlineStatus() {
   }, { merge: true });
 }
 
-// 3. Render DM Users List
+// 2. Home Tab: Follower Suggestions & Requests
+function showHomeTab() {
+  document.getElementById("chat-view").style.display = "none";
+  document.getElementById("home-view").style.display = "block";
+  document.getElementById("active-chat-title").innerText = "🏠 Home Hub";
+  document.getElementById("target-last-active").innerText = "";
+  toggleSidebarMenu();
+}
+
+function loadHomeData() {
+  if (!currentUser) return;
+
+  // Load Follow Requests
+  db.collection("users").doc(currentUser.uid).collection("requests").onSnapshot((snapshot) => {
+    const reqContainer = document.getElementById("follow-requests-list");
+    if (!reqContainer) return;
+    reqContainer.innerHTML = "";
+
+    if (snapshot.empty) {
+      reqContainer.innerHTML = "<p style='font-size:12px; opacity:0.6;'>No pending follow requests.</p>";
+    }
+
+    snapshot.forEach((doc) => {
+      const reqData = doc.data();
+      const div = document.createElement("div");
+      div.style.cssText = "display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.05); padding:8px; margin-bottom:5px; border-radius:5px;";
+      div.innerHTML = `
+        <span>${reqData.fromUsername}</span>
+        <button onclick="acceptFollowRequest('${reqData.fromUid}', '${reqData.fromUsername}')" style="background:#39ff14; color:#000; border:none; padding:5px 10px; border-radius:3px; cursor:pointer;">Accept</button>
+      `;
+      reqContainer.appendChild(div);
+    });
+  });
+
+  // Load Registered Users to Follow
+  db.collection("users").onSnapshot((snapshot) => {
+    const sugContainer = document.getElementById("suggested-users-list");
+    if (!sugContainer) return;
+    sugContainer.innerHTML = "";
+
+    snapshot.forEach((doc) => {
+      const userData = doc.data();
+      if (userData.uid === currentUser.uid) return;
+
+      const div = document.createElement("div");
+      div.style.cssText = "display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.05); padding:8px; margin-bottom:5px; border-radius:5px;";
+      div.innerHTML = `
+        <span>👤 ${userData.username || 'User'}</span>
+        <button onclick="sendFollowRequest('${userData.uid}')" style="background:#00ebff; color:#000; border:none; padding:5px 10px; border-radius:3px; cursor:pointer;">Follow</button>
+      `;
+      sugContainer.appendChild(div);
+    });
+  });
+}
+
+window.sendFollowRequest = async function(targetUid) {
+  try {
+    await db.collection("users").doc(targetUid).collection("requests").doc(currentUser.uid).set({
+      fromUid: currentUser.uid,
+      fromUsername: currentUser.displayName || currentUser.email.split("@")[0],
+      timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    alert("Follow request sent!");
+  } catch(e) {
+    alert("Error sending request: " + e.message);
+  }
+};
+
+window.acceptFollowRequest = async function(fromUid, fromUsername) {
+  try {
+    // Add to reciprocal DMs
+    await db.collection("users").doc(currentUser.uid).collection("following").doc(fromUid).set({
+      uid: fromUid,
+      username: fromUsername
+    });
+    await db.collection("users").doc(fromUid).collection("following").doc(currentUser.uid).set({
+      uid: currentUser.uid,
+      username: currentUser.displayName || currentUser.email.split("@")[0]
+    });
+
+    // Remove pending request
+    await db.collection("users").doc(currentUser.uid).collection("requests").doc(fromUid).delete();
+    alert("Follow request accepted! Direct messaging unlocked.");
+  } catch(e) {
+    alert("Error accepting request: " + e.message);
+  }
+};
+
+// 3. Load Active Direct Messages
 function loadDMUsers() {
   const dmContainer = document.getElementById("dm-users-list");
   if (!dmContainer) return;
 
-  db.collection("users").onSnapshot((snapshot) => {
+  db.collection("users").doc(currentUser.uid).collection("following").onSnapshot((snapshot) => {
     dmContainer.innerHTML = "";
     snapshot.forEach((doc) => {
       const userData = doc.data();
-      if (currentUser && userData.uid === currentUser.uid) return; // Skip showing yourself in DM list
-
       const userBtn = document.createElement("button");
       userBtn.classList.add("navigation-item");
-      userBtn.style.display = "block";
-      userBtn.style.width = "100%";
-      userBtn.style.textAlign = "left";
-      userBtn.style.margin = "5px 0";
-
-      userBtn.innerText = `💬 ${userData.username || 'User'}`;
+      userBtn.style.cssText = "display:block; width:100%; text-align:left; margin:5px 0;";
+      userBtn.innerText = `💬 ${userData.username}`;
       userBtn.onclick = () => startDM(userData);
-
       dmContainer.appendChild(userBtn);
     });
   });
 }
 
-// 4. Calculate relative time ("45 minutes ago")
-function formatLastActive(timestamp) {
-  if (!timestamp) return "Offline";
-  const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-  const now = new Date();
-  const diffMinutes = Math.floor((now - date) / 60000);
-
-  if (diffMinutes < 1) return "Active just now";
-  if (diffMinutes < 60) return `Active ${diffMinutes} minutes ago`;
-  const diffHours = Math.floor(diffMinutes / 60);
-  if (diffHours < 24) return `Active ${diffHours} hours ago`;
-  return `Active ${Math.floor(diffHours / 24)} days ago`;
-}
-
-// 5. Switch to a 1-on-1 Direct Message
 function startDM(targetUser) {
+  document.getElementById("home-view").style.display = "none";
+  document.getElementById("chat-view").style.display = "flex";
+  
   isDM = true;
-  // Generate deterministic unique DM chat ID for two users
   const ids = [currentUser.uid, targetUser.uid].sort();
   currentChatId = `dm_${ids[0]}_${ids[1]}`;
 
-  const titleNode = document.getElementById("active-chat-title");
-  const statusNode = document.getElementById("target-last-active");
-
-  if (titleNode) titleNode.innerText = `@ ${targetUser.username}`;
-  if (statusNode) statusNode.innerText = formatLastActive(targetUser.lastActive);
-
+  document.getElementById("active-chat-title").innerText = `@ ${targetUser.username}`;
   listenForMessages();
   toggleSidebarMenu();
 }
 
-// 6. Switch back to Global Room
 window.switchChannel = function (channelName) {
+  document.getElementById("home-view").style.display = "none";
+  document.getElementById("chat-view").style.display = "flex";
+
   isDM = false;
   currentChatId = channelName;
-
-  const titleNode = document.getElementById("active-chat-title");
-  const statusNode = document.getElementById("target-last-active");
-
-  if (titleNode) titleNode.innerText = `Room: ${channelName}`;
-  if (statusNode) statusNode.innerText = "";
-
+  document.getElementById("active-chat-title").innerText = `Room: ${channelName}`;
   listenForMessages();
   toggleSidebarMenu();
 };
 
-// 7. Real-Time Message Listener with Sound Alert
+// 4. Real-Time Messages Listener
 function listenForMessages() {
-  if (messageUnsubscribe) messageUnsubscribe(); // Stop listening to previous chat room
+  if (messageUnsubscribe) messageUnsubscribe();
 
   const messagesContainer = document.getElementById("messages");
   const notifSound = document.getElementById("notif-sound");
@@ -182,7 +246,7 @@ function listenForMessages() {
         if (currentUser && msgData.senderId !== currentUser.uid) {
           if (notifSound) {
             notifSound.currentTime = 0;
-            notifSound.play().catch(e => console.log("Audio play prevented:", e));
+            notifSound.play().catch(e => console.log("Audio block:", e));
           }
         }
       }
@@ -198,12 +262,17 @@ function listenForMessages() {
       const isMe = currentUser && msg.senderId === currentUser.uid;
       if (isMe) msgElement.classList.add("my-message");
 
-      msgElement.innerHTML = `
-        <div class="message-meta">
-          <span class="message-sender">${msg.sender || 'Anonymous'}</span>
-        </div>
-        <div class="message-body">${msg.text}</div>
-      `;
+      if (msg.audioUrl) {
+        msgElement.innerHTML = `
+          <div class="message-meta"><span class="message-sender">${msg.sender || 'Anonymous'}</span></div>
+          <div class="message-body"><audio controls src="${msg.audioUrl}"></audio></div>
+        `;
+      } else {
+        msgElement.innerHTML = `
+          <div class="message-meta"><span class="message-sender">${msg.sender || 'Anonymous'}</span></div>
+          <div class="message-body">${msg.text}</div>
+        `;
+      }
 
       messagesContainer.appendChild(msgElement);
     });
@@ -213,7 +282,7 @@ function listenForMessages() {
   });
 }
 
-// 8. Send Message
+// 5. Text & Voice Message Handlers
 window.sendMessage = async function () {
   const input = document.getElementById("msg-input");
   if (!input) return;
@@ -234,14 +303,56 @@ window.sendMessage = async function () {
     });
 
     input.value = "";
-    handleInputUpdate();
-    updateUserOnlineStatus(); // Refresh active status when sending
   } catch (error) {
     console.error("Error sending message:", error);
   }
 };
 
-// 9. Save System Settings (FIXED)
+window.toggleVoiceRecording = async function () {
+  const micBtn = document.getElementById("mic-record-btn");
+
+  if (!isRecording) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      audioChunks = [];
+
+      mediaRecorder.ondataavailable = (event) => audioChunks.push(event.data);
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        const reader = new FileReader();
+        reader.readAsDataURL(audioBlob);
+        reader.onloadend = async () => {
+          const base64Audio = reader.result;
+          const collectionRef = isDM 
+            ? db.collection("direct_messages").doc(currentChatId).collection("messages")
+            : db.collection("channels").doc(currentChatId).collection("messages");
+
+          await collectionRef.add({
+            audioUrl: base64Audio,
+            sender: currentUser.displayName || currentUser.email.split("@")[0],
+            senderId: currentUser.uid,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+          });
+        };
+      };
+
+      mediaRecorder.start();
+      isRecording = true;
+      micBtn.style.background = "#ff0055";
+      micBtn.innerText = "🛑";
+    } catch (err) {
+      alert("Microphone permission denied or unsupported on this browser.");
+    }
+  } else {
+    mediaRecorder.stop();
+    isRecording = false;
+    micBtn.style.background = "";
+    micBtn.innerText = "🎤";
+  }
+};
+
+// 6. Settings & Auth Helpers
 window.saveSystemSettings = async function () {
   const newUsername = document.getElementById("settings-username-input").value.trim();
   const newIcon = document.getElementById("settings-pfp-select")?.value;
@@ -265,13 +376,12 @@ window.saveSystemSettings = async function () {
 
     updateUserHeader();
     closeSettingsModal();
-    alert("Profile updated successfully!");
+    alert("Profile updated!");
   } catch (err) {
-    alert("Error updating profile: " + err.message);
+    alert("Error saving: " + err.message);
   }
 };
 
-// 10. Helper Functions
 window.toggleAuthMode = function () {
   const extraFields = document.getElementById("signup-extra-fields");
   const mainBtn = document.getElementById("auth-main-btn");
@@ -307,16 +417,6 @@ window.handleAuthSubmit = async function () {
     }
   } catch (err) {
     alert("Auth error: " + err.message);
-  }
-};
-
-window.handleGoogleSignIn = async function () {
-  const provider = new firebase.auth.GoogleAuthProvider();
-  try {
-    await auth.signInWithPopup(provider);
-    updateUserOnlineStatus();
-  } catch (err) {
-    alert("Google Sign-In Error: " + err.message);
   }
 };
 
