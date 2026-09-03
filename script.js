@@ -1,5 +1,5 @@
 // ==========================================
-// Original Wolf Chat Engine Code
+// Wolf Chat Engine - DM Enabled
 // ==========================================
 
 const firebaseConfig = {
@@ -22,7 +22,9 @@ const auth = firebase.auth();
 let currentUser = null;
 let userProfileData = {};
 let currentChatId = "General-Alpha";
+let isDirectMessage = false;
 let messageUnsubscribe = null;
+let userListUnsubscribe = null;
 let isInitialLoad = true;
 let selectedImageData = null;
 
@@ -31,7 +33,7 @@ let mediaRecorder = null;
 let audioChunks = [];
 let isRecording = false;
 
-// 1. Loading Timer & Authentication Observer
+// 1. App Initialization & Auth State
 window.addEventListener("DOMContentLoaded", () => {
   const loadingScreen = document.getElementById("loading-screen");
   const progressBar = document.getElementById("progress-bar");
@@ -49,16 +51,20 @@ window.addEventListener("DOMContentLoaded", () => {
     if (user) {
       currentUser = user;
       await fetchUserProfile();
+      await saveUserToDirectory();
       
       if (authScreen) authScreen.style.display = "none";
       if (chatContainer) chatContainer.style.display = "flex";
       
       updateUserHeader();
+      listenForUsers();
       listenForMessages();
 
       document.body.addEventListener('click', unlockAudio, { once: true });
     } else {
       currentUser = null;
+      if (userListUnsubscribe) userListUnsubscribe();
+      if (messageUnsubscribe) messageUnsubscribe();
       if (authScreen) authScreen.style.display = "flex";
       if (chatContainer) chatContainer.style.display = "none";
     }
@@ -71,6 +77,21 @@ async function fetchUserProfile() {
   if (doc.exists) {
     userProfileData = doc.data();
   }
+}
+
+async function saveUserToDirectory() {
+  if (!currentUser) return;
+  const username = userProfileData.username || currentUser.displayName || currentUser.email.split("@")[0];
+  const color = userProfileData.color || "#39ff14";
+  const pfpIcon = userProfileData.pfpIcon || "🐺";
+
+  await db.collection("users").doc(currentUser.uid).set({
+    uid: currentUser.uid,
+    username: username,
+    color: color,
+    pfpIcon: pfpIcon,
+    lastSeen: firebase.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
 }
 
 function unlockAudio() {
@@ -99,15 +120,48 @@ function updateUserHeader() {
   if (headerPfp) headerPfp.innerText = icon;
 }
 
-// 2. Room Navigation
+// 2. Fetch User Directory for DMs
+function listenForUsers() {
+  const dmUsersList = document.getElementById("dm-users-list");
+  if (!dmUsersList) return;
+
+  userListUnsubscribe = db.collection("users").onSnapshot((snapshot) => {
+    dmUsersList.innerHTML = "";
+
+    snapshot.forEach((doc) => {
+      const user = doc.data();
+      if (currentUser && user.uid !== currentUser.uid) {
+        const userBtn = document.createElement("button");
+        userBtn.className = "navigation-item";
+        userBtn.innerHTML = `💬 ${user.pfpIcon || '🐺'} <span style="color:${user.color || '#fff'}">${user.username || 'User'}</span>`;
+        userBtn.onclick = () => openDirectMessage(user.uid, user.username);
+        dmUsersList.appendChild(userBtn);
+      }
+    });
+  });
+}
+
+// 3. Channel & DM Navigation
 window.switchChannel = function (channelName) {
+  isDirectMessage = false;
   currentChatId = channelName;
   document.getElementById("active-chat-title").innerText = `Room: ${channelName}`;
   listenForMessages();
   toggleSidebarMenu();
 };
 
-// 3. Message Streaming & Audio Alerts
+window.openDirectMessage = function (targetUid, targetUsername) {
+  isDirectMessage = true;
+  // Unique sorted ID ensures both users open the exact same message thread
+  const dmRoomId = [currentUser.uid, targetUid].sort().join("_");
+  currentChatId = dmRoomId;
+
+  document.getElementById("active-chat-title").innerText = `DM: ${targetUsername}`;
+  listenForMessages();
+  toggleSidebarMenu();
+};
+
+// 4. Real-time Message Listener
 function listenForMessages() {
   if (messageUnsubscribe) messageUnsubscribe();
 
@@ -115,7 +169,9 @@ function listenForMessages() {
   const notifSound = document.getElementById("notif-sound");
   isInitialLoad = true;
 
-  const collectionRef = db.collection("channels").doc(currentChatId).collection("messages");
+  const collectionRef = isDirectMessage
+    ? db.collection("direct_messages").doc(currentChatId).collection("messages")
+    : db.collection("channels").doc(currentChatId).collection("messages");
 
   messageUnsubscribe = collectionRef.orderBy("timestamp", "asc").onSnapshot((snapshot) => {
     if (!messagesContainer) return;
@@ -161,7 +217,7 @@ function listenForMessages() {
   });
 }
 
-// 4. Send Messaging Logic
+// 5. Send Message Function
 window.sendMessage = async function () {
   const input = document.getElementById("msg-input");
   const text = input ? input.value.trim() : "";
@@ -169,7 +225,9 @@ window.sendMessage = async function () {
   if ((text === "" && !selectedImageData) || !currentUser) return;
 
   try {
-    const collectionRef = db.collection("channels").doc(currentChatId).collection("messages");
+    const collectionRef = isDirectMessage
+      ? db.collection("direct_messages").doc(currentChatId).collection("messages")
+      : db.collection("channels").doc(currentChatId).collection("messages");
 
     const payload = {
       sender: userProfileData.username || currentUser.displayName || currentUser.email.split("@")[0],
@@ -193,7 +251,7 @@ window.sendMessage = async function () {
   }
 };
 
-// 5. Voice Notes
+// 6. Voice Notes
 window.toggleVoiceRecording = async function () {
   const micBtn = document.getElementById("mic-record-btn");
 
@@ -210,7 +268,9 @@ window.toggleVoiceRecording = async function () {
         reader.readAsDataURL(audioBlob);
         reader.onloadend = async () => {
           const base64Audio = reader.result;
-          const collectionRef = db.collection("channels").doc(currentChatId).collection("messages");
+          const collectionRef = isDirectMessage
+            ? db.collection("direct_messages").doc(currentChatId).collection("messages")
+            : db.collection("channels").doc(currentChatId).collection("messages");
 
           await collectionRef.add({
             audioUrl: base64Audio,
@@ -237,7 +297,7 @@ window.toggleVoiceRecording = async function () {
   }
 };
 
-// 6. Media Attachment Drawers
+// 7. Attachments & Utilities
 window.toggleAttachmentMenu = function () {
   const drawer = document.getElementById("attachment-drawer-hud");
   if (drawer) drawer.style.display = drawer.style.display === "none" ? "block" : "none";
@@ -272,7 +332,7 @@ window.injectSticker = function (stickerEmoji) {
   toggleAttachmentMenu();
 };
 
-// 7. Settings & Account Profile
+// 8. Profile Settings Modal
 window.saveSystemSettings = async function () {
   const newUsername = document.getElementById("settings-username-input").value.trim();
   const newIcon = document.getElementById("settings-pfp-select")?.value;
@@ -293,13 +353,7 @@ window.saveSystemSettings = async function () {
       color: newColor || "#39ff14"
     };
 
-    await db.collection("users").doc(currentUser.uid).set({
-      uid: currentUser.uid,
-      username: updatedName,
-      pfpIcon: userProfileData.pfpIcon,
-      color: userProfileData.color
-    }, { merge: true });
-
+    await saveUserToDirectory();
     updateUserHeader();
     closeSettingsModal();
     alert("Profile saved successfully!");
@@ -308,7 +362,7 @@ window.saveSystemSettings = async function () {
   }
 };
 
-// 8. Authentication Actions
+// 9. Auth Handlers
 window.toggleAuthMode = function () {
   const extraFields = document.getElementById("signup-extra-fields");
   const mainBtn = document.getElementById("auth-main-btn");
@@ -340,7 +394,7 @@ window.handleAuthSubmit = async function () {
         await userCred.user.updateProfile({ displayName: username });
       }
       userProfileData = { username: username || email.split("@")[0], color: color || "#39ff14", pfpIcon: icon || "🐺" };
-      await db.collection("users").doc(userCred.user.uid).set(userProfileData);
+      await saveUserToDirectory();
     } else {
       await auth.signInWithEmailAndPassword(email, password);
     }
