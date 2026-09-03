@@ -1,5 +1,5 @@
 // ==========================================
-// WolfChat 2.0 Engine
+// WolfChat 2.0 Engine - Complete Build
 // ==========================================
 
 const firebaseConfig = {
@@ -20,34 +20,38 @@ const db = firebase.firestore();
 const auth = firebase.auth();
 
 let currentUser = null;
+let userProfileData = {};
 let currentChatId = "General-Alpha";
 let isDM = false;
 let messageUnsubscribe = null;
 let isInitialLoad = true;
+let selectedImageData = null;
 
-// Voice Recorder Variables
+// Voice Recorder
 let mediaRecorder = null;
 let audioChunks = [];
 let isRecording = false;
 
-// 1. Loading Screen & Auth Lifecycle
+// 1. Loading Timer & Lifecycle
 window.addEventListener("DOMContentLoaded", () => {
   const loadingScreen = document.getElementById("loading-screen");
   const progressBar = document.getElementById("progress-bar");
 
   if (progressBar) progressBar.style.width = "100%";
 
-  // Fixed exactly to 4 seconds (4000ms)
+  // Fixed 4-second delay
   setTimeout(() => {
     if (loadingScreen) loadingScreen.style.display = "none";
   }, 4000);
 
-  auth.onAuthStateChanged((user) => {
+  auth.onAuthStateChanged(async (user) => {
     const authScreen = document.getElementById("auth-screen");
     const chatContainer = document.getElementById("chat-container");
 
     if (user) {
       currentUser = user;
+      await fetchUserProfile();
+      
       if (authScreen) authScreen.style.display = "none";
       if (chatContainer) chatContainer.style.display = "flex";
       
@@ -66,6 +70,14 @@ window.addEventListener("DOMContentLoaded", () => {
   });
 });
 
+async function fetchUserProfile() {
+  if (!currentUser) return;
+  const doc = await db.collection("users").doc(currentUser.uid).get();
+  if (doc.exists) {
+    userProfileData = doc.data();
+  }
+}
+
 function unlockAudio() {
   const notifSound = document.getElementById("notif-sound");
   if (notifSound) {
@@ -79,22 +91,32 @@ function unlockAudio() {
 function updateUserHeader() {
   if (!currentUser) return;
   const userDisplay = document.getElementById("user-display");
+  const headerPfp = document.getElementById("header-pfp");
+
+  const name = userProfileData.username || currentUser.displayName || currentUser.email.split("@")[0];
+  const color = userProfileData.color || "#39ff14";
+  const icon = userProfileData.pfpIcon || "🐺";
+
   if (userDisplay) {
-    userDisplay.innerText = currentUser.displayName || currentUser.email.split("@")[0];
+    userDisplay.innerText = name;
+    userDisplay.style.color = color;
   }
+  if (headerPfp) headerPfp.innerText = icon;
 }
 
 function updateUserOnlineStatus() {
   if (!currentUser) return;
   db.collection("users").doc(currentUser.uid).set({
     uid: currentUser.uid,
-    username: currentUser.displayName || currentUser.email.split("@")[0],
+    username: userProfileData.username || currentUser.displayName || currentUser.email.split("@")[0],
     email: currentUser.email,
+    color: userProfileData.color || "#39ff14",
+    pfpIcon: userProfileData.pfpIcon || "🐺",
     lastActive: firebase.firestore.FieldValue.serverTimestamp()
   }, { merge: true });
 }
 
-// 2. Home Tab: Follower Suggestions & Requests
+// 2. Home Hub & Follower Engine
 function showHomeTab() {
   document.getElementById("chat-view").style.display = "none";
   document.getElementById("home-view").style.display = "block";
@@ -106,14 +128,14 @@ function showHomeTab() {
 function loadHomeData() {
   if (!currentUser) return;
 
-  // Load Follow Requests
+  // Follow Requests
   db.collection("users").doc(currentUser.uid).collection("requests").onSnapshot((snapshot) => {
     const reqContainer = document.getElementById("follow-requests-list");
     if (!reqContainer) return;
     reqContainer.innerHTML = "";
 
     if (snapshot.empty) {
-      reqContainer.innerHTML = "<p style='font-size:12px; opacity:0.6;'>No pending follow requests.</p>";
+      reqContainer.innerHTML = "<p style='font-size:12px; opacity:0.6;'>No pending requests.</p>";
     }
 
     snapshot.forEach((doc) => {
@@ -128,7 +150,7 @@ function loadHomeData() {
     });
   });
 
-  // Load Registered Users to Follow
+  // User Suggestions
   db.collection("users").onSnapshot((snapshot) => {
     const sugContainer = document.getElementById("suggested-users-list");
     if (!sugContainer) return;
@@ -141,7 +163,7 @@ function loadHomeData() {
       const div = document.createElement("div");
       div.style.cssText = "display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.05); padding:8px; margin-bottom:5px; border-radius:5px;";
       div.innerHTML = `
-        <span>👤 ${userData.username || 'User'}</span>
+        <span style="color:${userData.color || '#fff'}">${userData.pfpIcon || '👤'} ${userData.username || 'User'}</span>
         <button onclick="sendFollowRequest('${userData.uid}')" style="background:#00ebff; color:#000; border:none; padding:5px 10px; border-radius:3px; cursor:pointer;">Follow</button>
       `;
       sugContainer.appendChild(div);
@@ -153,36 +175,34 @@ window.sendFollowRequest = async function(targetUid) {
   try {
     await db.collection("users").doc(targetUid).collection("requests").doc(currentUser.uid).set({
       fromUid: currentUser.uid,
-      fromUsername: currentUser.displayName || currentUser.email.split("@")[0],
+      fromUsername: userProfileData.username || currentUser.displayName || currentUser.email.split("@")[0],
       timestamp: firebase.firestore.FieldValue.serverTimestamp()
     });
     alert("Follow request sent!");
   } catch(e) {
-    alert("Error sending request: " + e.message);
+    alert("Error: " + e.message);
   }
 };
 
 window.acceptFollowRequest = async function(fromUid, fromUsername) {
   try {
-    // Add to reciprocal DMs
     await db.collection("users").doc(currentUser.uid).collection("following").doc(fromUid).set({
       uid: fromUid,
       username: fromUsername
     });
     await db.collection("users").doc(fromUid).collection("following").doc(currentUser.uid).set({
       uid: currentUser.uid,
-      username: currentUser.displayName || currentUser.email.split("@")[0]
+      username: userProfileData.username || currentUser.displayName || currentUser.email.split("@")[0]
     });
 
-    // Remove pending request
     await db.collection("users").doc(currentUser.uid).collection("requests").doc(fromUid).delete();
-    alert("Follow request accepted! Direct messaging unlocked.");
+    alert("Follow request accepted!");
   } catch(e) {
-    alert("Error accepting request: " + e.message);
+    alert("Error: " + e.message);
   }
 };
 
-// 3. Load Active Direct Messages
+// 3. DM Navigation
 function loadDMUsers() {
   const dmContainer = document.getElementById("dm-users-list");
   if (!dmContainer) return;
@@ -225,7 +245,7 @@ window.switchChannel = function (channelName) {
   toggleSidebarMenu();
 };
 
-// 4. Real-Time Messages Listener
+// 4. Message Stream & Audio Alerts
 function listenForMessages() {
   if (messageUnsubscribe) messageUnsubscribe();
 
@@ -246,7 +266,7 @@ function listenForMessages() {
         if (currentUser && msgData.senderId !== currentUser.uid) {
           if (notifSound) {
             notifSound.currentTime = 0;
-            notifSound.play().catch(e => console.log("Audio block:", e));
+            notifSound.play().catch(e => console.log("Audio play error:", e));
           }
         }
       }
@@ -262,18 +282,17 @@ function listenForMessages() {
       const isMe = currentUser && msg.senderId === currentUser.uid;
       if (isMe) msgElement.classList.add("my-message");
 
+      let content = `<div class="message-meta"><span class="message-sender" style="color:${msg.color || '#39ff14'}">${msg.sender || 'Anonymous'}</span></div>`;
+
       if (msg.audioUrl) {
-        msgElement.innerHTML = `
-          <div class="message-meta"><span class="message-sender">${msg.sender || 'Anonymous'}</span></div>
-          <div class="message-body"><audio controls src="${msg.audioUrl}"></audio></div>
-        `;
+        content += `<div class="message-body"><audio controls src="${msg.audioUrl}"></audio></div>`;
+      } else if (msg.imageUrl) {
+        content += `<div class="message-body"><img src="${msg.imageUrl}" style="max-width:200px; border-radius:8px;"></div>`;
       } else {
-        msgElement.innerHTML = `
-          <div class="message-meta"><span class="message-sender">${msg.sender || 'Anonymous'}</span></div>
-          <div class="message-body">${msg.text}</div>
-        `;
+        content += `<div class="message-body">${msg.text}</div>`;
       }
 
+      msgElement.innerHTML = content;
       messagesContainer.appendChild(msgElement);
     });
 
@@ -282,27 +301,35 @@ function listenForMessages() {
   });
 }
 
-// 5. Text & Voice Message Handlers
+// 5. Send Text, Media & Audio Voice
 window.sendMessage = async function () {
   const input = document.getElementById("msg-input");
-  if (!input) return;
+  const text = input ? input.value.trim() : "";
 
-  const text = input.value.trim();
-  if (text === "" || !currentUser) return;
+  if ((text === "" && !selectedImageData) || !currentUser) return;
 
   try {
     const collectionRef = isDM 
       ? db.collection("direct_messages").doc(currentChatId).collection("messages")
       : db.collection("channels").doc(currentChatId).collection("messages");
 
-    await collectionRef.add({
-      text: text,
-      sender: currentUser.displayName || currentUser.email.split("@")[0],
+    const payload = {
+      sender: userProfileData.username || currentUser.displayName || currentUser.email.split("@")[0],
       senderId: currentUser.uid,
+      color: userProfileData.color || "#39ff14",
       timestamp: firebase.firestore.FieldValue.serverTimestamp()
-    });
+    };
 
-    input.value = "";
+    if (selectedImageData) {
+      payload.imageUrl = selectedImageData;
+      cancelMediaSelection();
+    } else {
+      payload.text = text;
+    }
+
+    await collectionRef.add(payload);
+    if (input) input.value = "";
+    handleInputUpdate();
   } catch (error) {
     console.error("Error sending message:", error);
   }
@@ -330,8 +357,9 @@ window.toggleVoiceRecording = async function () {
 
           await collectionRef.add({
             audioUrl: base64Audio,
-            sender: currentUser.displayName || currentUser.email.split("@")[0],
+            sender: userProfileData.username || currentUser.displayName || currentUser.email.split("@")[0],
             senderId: currentUser.uid,
+            color: userProfileData.color || "#39ff14",
             timestamp: firebase.firestore.FieldValue.serverTimestamp()
           });
         };
@@ -342,7 +370,7 @@ window.toggleVoiceRecording = async function () {
       micBtn.style.background = "#ff0055";
       micBtn.innerText = "🛑";
     } catch (err) {
-      alert("Microphone permission denied or unsupported on this browser.");
+      alert("Microphone permission denied.");
     }
   } else {
     mediaRecorder.stop();
@@ -352,36 +380,77 @@ window.toggleVoiceRecording = async function () {
   }
 };
 
-// 6. Settings & Auth Helpers
+window.toggleAttachmentMenu = function () {
+  const drawer = document.getElementById("attachment-drawer-hud");
+  if (drawer) drawer.style.display = drawer.style.display === "none" ? "block" : "none";
+};
+
+window.triggerImageUpload = function () {
+  document.getElementById("hidden-file-input").click();
+};
+
+window.handleImageSelect = function (event) {
+  const file = event.target.files[0];
+  if (file) {
+    const reader = new FileReader();
+    reader.onload = function (e) {
+      selectedImageData = e.target.result;
+      document.getElementById("preview-content").innerHTML = `<img src="${selectedImageData}" style="max-height:100px;">`;
+      document.getElementById("media-preview-tray").style.display = "flex";
+      toggleAttachmentMenu();
+    };
+    reader.readAsDataURL(file);
+  }
+};
+
+window.cancelMediaSelection = function () {
+  selectedImageData = null;
+  document.getElementById("media-preview-tray").style.display = "none";
+};
+
+window.injectSticker = function (stickerEmoji) {
+  const input = document.getElementById("msg-input");
+  if (input) input.value += stickerEmoji;
+  toggleAttachmentMenu();
+};
+
+// 6. Settings & Profile Changes
 window.saveSystemSettings = async function () {
   const newUsername = document.getElementById("settings-username-input").value.trim();
   const newIcon = document.getElementById("settings-pfp-select")?.value;
+  const newColor = document.getElementById("settings-color-picker")?.value;
 
   if (!currentUser) return;
 
   try {
+    const updatedName = newUsername || userProfileData.username || currentUser.displayName || currentUser.email.split("@")[0];
+
     if (newUsername !== "") {
       await currentUser.updateProfile({ displayName: newUsername });
     }
 
-    await db.collection("users").doc(currentUser.uid).set({
-      username: newUsername || currentUser.displayName || currentUser.email.split("@")[0],
-      pfpIcon: newIcon || "🐺"
-    }, { merge: true });
+    userProfileData = {
+      username: updatedName,
+      pfpIcon: newIcon || "🐺",
+      color: newColor || "#39ff14"
+    };
 
-    if (newIcon) {
-      const headerPfp = document.getElementById("header-pfp");
-      if (headerPfp) headerPfp.innerText = newIcon;
-    }
+    await db.collection("users").doc(currentUser.uid).set({
+      uid: currentUser.uid,
+      username: updatedName,
+      pfpIcon: userProfileData.pfpIcon,
+      color: userProfileData.color
+    }, { merge: true });
 
     updateUserHeader();
     closeSettingsModal();
-    alert("Profile updated!");
+    alert("Profile saved successfully!");
   } catch (err) {
-    alert("Error saving: " + err.message);
+    alert("Save error: " + err.message);
   }
 };
 
+// 7. Auth Handlers
 window.toggleAuthMode = function () {
   const extraFields = document.getElementById("signup-extra-fields");
   const mainBtn = document.getElementById("auth-main-btn");
@@ -402,6 +471,8 @@ window.handleAuthSubmit = async function () {
   const email = document.getElementById("auth-email").value.trim();
   const password = document.getElementById("auth-password").value.trim();
   const username = document.getElementById("username")?.value.trim();
+  const color = document.getElementById("color-picker")?.value;
+  const icon = document.getElementById("auth-pfp-select")?.value;
   const isSignUp = document.getElementById("signup-extra-fields").style.display !== "none";
 
   try {
@@ -410,13 +481,33 @@ window.handleAuthSubmit = async function () {
       if (username) {
         await userCred.user.updateProfile({ displayName: username });
       }
+      userProfileData = { username: username || email.split("@")[0], color: color || "#39ff14", pfpIcon: icon || "🐺" };
       updateUserOnlineStatus();
     } else {
       await auth.signInWithEmailAndPassword(email, password);
-      updateUserOnlineStatus();
     }
   } catch (err) {
     alert("Auth error: " + err.message);
+  }
+};
+
+window.handleGoogleSignIn = async function () {
+  const provider = new firebase.auth.GoogleAuthProvider();
+  try {
+    await auth.signInWithPopup(provider);
+    updateUserOnlineStatus();
+  } catch (err) {
+    alert("Google error: " + err.message);
+  }
+};
+
+window.handleFacebookSignIn = async function () {
+  const provider = new firebase.auth.FacebookAuthProvider();
+  try {
+    await auth.signInWithPopup(provider);
+    updateUserOnlineStatus();
+  } catch (err) {
+    alert("Facebook error: " + err.message);
   }
 };
 
