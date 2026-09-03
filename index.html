@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Wolf Chat</title>
   
-  <!-- Firebase Compatibility SDKs (Matching your original script imports) -->
+  <!-- Firebase Compatibility SDKs -->
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
@@ -84,8 +84,10 @@
       <!-- Channels Sidebar -->
       <div id="chat-sidebar" class="sidebar-hidden">
         <div id="sidebar-main-view">
-          <div class="sidebar-header">
+          <div class="sidebar-header" style="display: flex; justify-content: space-between; align-items: center; padding: 0 10px;">
             <h1 class="panel-title">CHANNELS</h1>
+            <!-- Added sidebar close button -->
+            <button class="close-modal-btn" onclick="toggleSidebarMenu()" style="cursor: pointer; background: transparent; border: none; color: #fff; font-size: 18px;">✕</button>
           </div>
           
           <div class="sidebar-scrollable-zone">
@@ -109,6 +111,7 @@
       <!-- Active Chat Room Area -->
       <div id="chat-main">
         <div id="chat-header">
+          <!-- Hamburger Menu toggles open and closed -->
           <button id="hamburger-menu-btn" onclick="toggleSidebarMenu()">☰</button>
           <div id="current-room-display">Room: General-Alpha</div>
           <div class="header-right-cluster">
@@ -144,17 +147,12 @@
           </div>
 
           <div id="input-area">
-            
             <div class="whatsapp-input-pill-container">
               <input type="text" id="msg-input" placeholder="Type a message..." maxlength="250" oninput="handleInputUpdate()" onkeydown="if(event.key==='Enter') sendMessage()">
-              
               <span id="char-counter-node">0 / 250</span>
-              
               <button id="plus-attach-btn" class="utility-toggle-trigger" onclick="toggleAttachmentMenu()">+</button>
             </div>
-
             <button id="mic-record-btn" class="mic-standalone-btn" onclick="toggleRecording()">🎤</button>
-
           </div>
         </div>
       </div>
@@ -169,7 +167,6 @@
         <button class="close-modal-btn" onclick="closeSettingsModal()">✕</button>
       </div>
       <div class="modal-body">
-        
         <div class="input-group">
           <label>Update Profile Picture</label>
           <div class="settings-pfp-uploader-row">
@@ -202,7 +199,6 @@
 
   <audio id="notif-sound" src="https://assets.mixkit.co/active_storage/sfx/2357/2357-84.wav" preload="auto"></audio>
 
-  <!-- Application Engine -->
   <script src="script.js"></script>
 </body>
 </html>
