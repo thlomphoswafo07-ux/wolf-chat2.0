@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Wolf Chat</title>
   
-  <!-- Firebase Compatibility SDKs -->
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
@@ -14,7 +13,7 @@
 </head>
 <body>
 
-  <!-- Loading Screen -->
+  <!-- Loading Screen (Fixed strictly to 4 seconds) -->
   <div id="loading-screen">
     <div class="wolf-logo">🐺</div>
     <h2>WOLF CHAT</h2>
@@ -27,7 +26,7 @@
   <div id="desktop-ambient-viewport">
     <div id="app-wallpaper-shroud"></div>
 
-    <!-- Authentication Screen -->
+    <!-- Auth Screen -->
     <div id="auth-screen">
       <div class="auth-box">
         <div class="auth-brand-header">
@@ -50,7 +49,7 @@
             <input type="text" id="username" placeholder="Choose a username...">
           </div>
           <div class="input-group">
-            <label>Profile Icon</label>
+            <label>Profile Avatar</label>
             <select id="auth-pfp-select">
               <option value="🐺">Wolf</option>
               <option value="🥷">Ninja</option>
@@ -58,19 +57,9 @@
               <option value="⚡">Volt</option>
             </select>
           </div>
-          <div class="input-group">
-            <label>Name Color</label>
-            <input type="color" id="color-picker" value="#39ff14">
-          </div>
         </div>
 
         <button class="prime-action-btn" id="auth-main-btn" onclick="handleAuthSubmit()">Sign In</button>
-        
-        <div style="margin: 20px 0 10px 0; text-align: center; color: #526676; font-size: 11px; letter-spacing: 1px;">OR CONTINUE WITH</div>
-        <div style="display: flex; gap: 10px;">
-          <button class="prime-action-btn" style="background: rgba(0, 235, 255, 0.1); border-color: #00ebff; color: #00ebff; font-size: 11px;" onclick="handleGoogleSignIn()">🌐 Google</button>
-          <button class="prime-action-btn" style="background: rgba(57, 255, 20, 0.1); border-color: #39ff14; color: #39ff14; font-size: 11px;" onclick="handleFacebookSignIn()">📘 Facebook</button>
-        </div>
 
         <div class="developer-credit-node" style="margin-top:25px; cursor:pointer; color:#00ebff;" id="auth-toggle-mode" onclick="toggleAuthMode()">
           Don't have an account? Sign up here
@@ -81,25 +70,23 @@
     <!-- Main Chat Interface -->
     <div id="chat-container" style="display: none;">
       
-      <!-- Channels & DM Sidebar -->
+      <!-- Responsive Navigation Sidebar -->
       <div id="chat-sidebar" class="sidebar-hidden">
         <div id="sidebar-main-view">
-          <div class="sidebar-header" style="display: flex; justify-content: space-between; align-items: center; padding: 0 10px;">
-            <h1 class="panel-title">DIRECT MESSAGES</h1>
+          <div class="sidebar-header" style="display: flex; justify-content: space-between; align-items: center; padding: 10px;">
+            <h1 class="panel-title">MENU</h1>
             <button class="close-modal-btn" onclick="toggleSidebarMenu()" style="cursor: pointer; background: transparent; border: none; color: #fff; font-size: 18px;">✕</button>
           </div>
           
           <div class="sidebar-scrollable-zone">
             <div class="navigation-group">
-              <span class="group-label">Global Rooms</span>
-              <button class="navigation-item active-room" onclick="switchChannel('General-Alpha')">🌐 General-Alpha</button>
+              <button class="navigation-item" onclick="showHomeTab()">🏠 Home (People & Requests)</button>
+              <button class="navigation-item active-room" onclick="switchChannel('General-Alpha')">🌐 General Room</button>
             </div>
             
             <div class="navigation-group">
-              <span class="group-label">Direct Messages / Follows</span>
-              <div id="dm-users-list">
-                <!-- Registered users appear here with last active status -->
-              </div>
+              <span class="group-label">Direct Messages (Followed)</span>
+              <div id="dm-users-list"></div>
             </div>
           </div>
 
@@ -109,7 +96,7 @@
         </div>
       </div>
 
-      <!-- Active Chat Area -->
+      <!-- Main Display Area -->
       <div id="chat-main">
         <div id="chat-header">
           <button id="hamburger-menu-btn" onclick="toggleSidebarMenu()">☰</button>
@@ -125,41 +112,35 @@
           </div>
         </div>
 
-        <div id="messages"></div>
-        <div id="typing-indicator"></div>
+        <!-- Home Hub View -->
+        <div id="home-view" style="display: none; padding: 15px; overflow-y: auto; flex: 1;">
+          <h3>Notifications & Requests</h3>
+          <div id="follow-requests-list" style="margin-bottom: 20px;"></div>
 
-        <div id="media-preview-tray">
-          <div id="preview-content"></div>
-          <button class="close-modal-btn" onclick="cancelMediaSelection()">✕</button>
+          <h3>Suggested People to Follow</h3>
+          <div id="suggested-users-list"></div>
         </div>
 
-        <div id="input-area-wrapper">
-          <div id="attachment-drawer-hud">
-            <button class="drawer-action-node" onclick="triggerImageUpload()">🖼️ Upload Image</button>
-            <input type="file" id="hidden-file-input" accept="image/*" style="display: none;" onchange="handleImageSelect(event)">
-            <div class="drawer-sticker-separator"><span>STICKERS</span></div>
-            <div class="sticker-grid-layout">
-              <button class="sticker-item" onclick="injectSticker('🔥')">🔥</button>
-              <button class="sticker-item" onclick="injectSticker('👑')">👑</button>
-              <button class="sticker-item" onclick="injectSticker('👾')">👾</button>
-              <button class="sticker-item" onclick="injectSticker('🎯')">🎯</button>
-            </div>
-          </div>
+        <!-- Chat View -->
+        <div id="chat-view" style="display: flex; flex-direction: column; flex: 1; overflow: hidden;">
+          <div id="messages" style="flex: 1; overflow-y: auto; padding: 10px;"></div>
+          <div id="typing-indicator"></div>
 
-          <div id="input-area">
-            <div class="whatsapp-input-pill-container">
-              <input type="text" id="msg-input" placeholder="Type a message..." maxlength="250" oninput="handleInputUpdate()" onkeydown="if(event.key==='Enter') sendMessage()">
-              <span id="char-counter-node">0 / 250</span>
-              <button id="plus-attach-btn" class="utility-toggle-trigger" onclick="toggleAttachmentMenu()">+</button>
+          <div id="input-area-wrapper">
+            <div id="input-area" style="display: flex; align-items: center; gap: 5px; padding: 10px;">
+              <div class="whatsapp-input-pill-container" style="flex: 1; display: flex; align-items: center;">
+                <input type="text" id="msg-input" placeholder="Type a message..." maxlength="250" oninput="handleInputUpdate()" onkeydown="if(event.key==='Enter') sendMessage()" style="width: 100%;">
+              </div>
+              <button id="mic-record-btn" class="mic-standalone-btn" onclick="toggleVoiceRecording()" style="padding: 10px; border-radius: 50%; cursor: pointer;">🎤</button>
             </div>
-            <button id="mic-record-btn" class="mic-standalone-btn" onclick="toggleRecording()">🎤</button>
           </div>
         </div>
+
       </div>
     </div>
   </div>
 
-  <!-- Profile Settings Modal -->
+  <!-- Profile Settings Modal (Custom Image Upload Removed) -->
   <div id="settings-modal" class="modal-overlay">
     <div class="modal-box">
       <div class="modal-header">
@@ -172,7 +153,7 @@
           <input type="text" id="settings-username-input" placeholder="Enter new username...">
         </div>
         <div class="input-group">
-          <label>Profile Icon</label>
+          <label>Profile Avatar</label>
           <select id="settings-pfp-select">
             <option value="🐺">Wolf</option>
             <option value="🥷">Ninja</option>
