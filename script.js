@@ -2,7 +2,6 @@
 // WolfChat 2.0 Engine - Real-Time Compat
 // ==========================================
 
-// 1. Firebase Configuration
 const firebaseConfig = {
   apiKey: "AIzaSyBzIGdwodKyZ09EWxaJeWir0tJ2ECJ1RtM",
   authDomain: "wolf-chat-b0153.firebaseapp.com",
@@ -13,7 +12,6 @@ const firebaseConfig = {
   appId: "1:810966020901:web:4e5cfefca32b00cc45a0cc"
 };
 
-// Initialize Firebase
 if (!firebase.apps.length) {
   firebase.initializeApp(firebaseConfig);
 }
@@ -21,11 +19,10 @@ if (!firebase.apps.length) {
 const db = firebase.firestore();
 const auth = firebase.auth();
 
-// Global App State
 let currentUser = null;
 let currentChannel = "General-Alpha";
+let isInitialLoad = true; // Tracks initial fetch to prevent sound on existing messages
 
-// Hide Loading Screen once Firebase is ready
 window.addEventListener("DOMContentLoaded", () => {
   const loadingScreen = document.getElementById("loading-screen");
   const progressBar = document.getElementById("progress-bar");
@@ -36,7 +33,6 @@ window.addEventListener("DOMContentLoaded", () => {
     if (loadingScreen) loadingScreen.style.display = "none";
   }, 800);
 
-  // Monitor Authentication State
   auth.onAuthStateChanged((user) => {
     const authScreen = document.getElementById("auth-screen");
     const chatContainer = document.getElementById("chat-container");
@@ -49,7 +45,6 @@ window.addEventListener("DOMContentLoaded", () => {
       const userDisplay = document.getElementById("user-display");
       if (userDisplay) userDisplay.innerText = user.displayName || user.email.split("@")[0];
 
-      // Start listening to live chat messages
       listenForMessages();
     } else {
       currentUser = null;
@@ -59,9 +54,19 @@ window.addEventListener("DOMContentLoaded", () => {
   });
 });
 
-// 2. REAL-TIME MESSAGE LISTENER (Fixes Syncing across devices)
+// Helper function to format timestamp into WhatsApp-style time (e.g. 14:30)
+function formatTime(timestamp) {
+  if (!timestamp) return "Just now";
+  const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+// REAL-TIME LISTENER WITH TIMESTAMPS AND SOUND
 function listenForMessages() {
   const messagesContainer = document.getElementById("messages");
+  const notifSound = document.getElementById("notif-sound");
+
+  isInitialLoad = true;
 
   db.collection("channels")
     .doc(currentChannel)
@@ -69,7 +74,22 @@ function listenForMessages() {
     .orderBy("timestamp", "asc")
     .onSnapshot((snapshot) => {
       if (!messagesContainer) return;
-      messagesContainer.innerHTML = ""; // Clear existing messages to re-render
+
+      // Detect new incoming message for audio alert
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === "added" && !isInitialLoad) {
+          const msgData = change.doc.data();
+          // Only play notification sound if the message was sent by someone else
+          if (currentUser && msgData.senderId !== currentUser.uid) {
+            if (notifSound) {
+              notifSound.currentTime = 0;
+              notifSound.play().catch(e => console.log("Audio play blocked by browser:", e));
+            }
+          }
+        }
+      });
+
+      messagesContainer.innerHTML = "";
 
       snapshot.forEach((doc) => {
         const msg = doc.data();
@@ -79,24 +99,27 @@ function listenForMessages() {
         const isMe = currentUser && msg.senderId === currentUser.uid;
         if (isMe) msgElement.classList.add("my-message");
 
+        const timeString = formatTime(msg.timestamp);
+
         msgElement.innerHTML = `
           <div class="message-meta">
             <span class="message-sender">${msg.sender || 'Anonymous'}</span>
           </div>
           <div class="message-body">${msg.text}</div>
+          <div class="message-time" style="font-size: 10px; opacity: 0.7; text-align: right; margin-top: 3px;">${timeString}</div>
         `;
 
         messagesContainer.appendChild(msgElement);
       });
 
-      // Auto-scroll to latest message
       messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      isInitialLoad = false;
     }, (error) => {
       console.error("Real-time listener error:", error);
     });
 }
 
-// 3. SEND MESSAGE FUNCTION
+// SEND MESSAGE FUNCTION
 window.sendMessage = async function () {
   const input = document.getElementById("msg-input");
   if (!input) return;
@@ -115,14 +138,13 @@ window.sendMessage = async function () {
         timestamp: firebase.firestore.FieldValue.serverTimestamp()
       });
 
-    input.value = ""; // Clear input box
+    input.value = "";
     handleInputUpdate();
   } catch (error) {
     console.error("Error sending message:", error);
   }
 };
 
-// 4. UI TOGGLES & HELPERS
 window.toggleAuthMode = function () {
   const extraFields = document.getElementById("signup-extra-fields");
   const mainBtn = document.getElementById("auth-main-btn");
@@ -200,4 +222,4 @@ window.handleInputUpdate = function () {
   if (input && counter) {
     counter.innerText = `${input.value.length} / 250`;
   }
-};f
+};
