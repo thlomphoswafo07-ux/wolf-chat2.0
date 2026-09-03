@@ -106,7 +106,7 @@
           <div class="navigation-group">
             <p style="font-size: 11px; color: #00ebff; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px;">Direct Messages</p>
             <div id="dm-users-list">
-              <!-- Registered online users will automatically render here dynamically -->
+              <!-- Dynamic Users -->
             </div>
           </div>
         </div>
@@ -122,7 +122,10 @@
         <div id="chat-header">
           <div style="display: flex; align-items: center; gap: 10px;">
             <button id="hamburger-menu-btn" onclick="toggleSidebarMenu()">☰</button>
-            <h3 id="active-chat-title" style="font-size: 16px; color: #fff;">Room: General-Alpha</h3>
+            <div>
+              <h3 id="active-chat-title" style="font-size: 16px; color: #fff; margin: 0;">Room: General-Alpha</h3>
+              <small id="typing-indicator-text" style="color: #39ff14; font-size: 11px; display: block; height: 14px; font-weight: bold;"></small>
+            </div>
           </div>
 
           <div class="header-right-cluster" style="display: flex; gap: 12px; align-items: center;">
@@ -181,9 +184,9 @@
       
       <!-- Video Streams Container -->
       <div style="position: relative; width: 100%; height: 300px; background: #111b21; border-radius: 12px; overflow: hidden; margin-bottom: 15px;">
-        <!-- Remote User Video (Full screen) -->
+        <!-- Remote User Video -->
         <video id="remote-video" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>
-        <!-- Local User Video (PIP Preview) -->
+        <!-- Local User Video -->
         <video id="local-video" autoplay playsinline muted style="position: absolute; bottom: 10px; right: 10px; width: 100px; height: 120px; object-fit: cover; border-radius: 8px; border: 2px solid #00ebff; background: #000;"></video>
       </div>
 
