@@ -1,5 +1,5 @@
 // ==========================================
-// WOLF CHAT 2.0 - FULL MONOLITHIC ENGINE
+// Wolf Chat Engine - DM & PeerJS Calling Enabled
 // ==========================================
 
 const firebaseConfig = {
@@ -25,10 +25,8 @@ let currentChatId = "General-Alpha";
 let isDirectMessage = false;
 let messageUnsubscribe = null;
 let userListUnsubscribe = null;
-let typingUnsubscribe = null;
 let isInitialLoad = true;
 let selectedImageData = null;
-let typingTimeout = null;
 
 // Voice Recorder variables
 let mediaRecorder = null;
@@ -50,7 +48,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
   setTimeout(() => {
     if (loadingScreen) loadingScreen.style.display = "none";
-  }, 2000);
+  }, 4000);
 
   auth.onAuthStateChanged(async (user) => {
     const authScreen = document.getElementById("auth-screen");
@@ -60,7 +58,6 @@ window.addEventListener("DOMContentLoaded", () => {
       currentUser = user;
       await fetchUserProfile();
       await saveUserToDirectory();
-      setupUserPresence();
       
       if (authScreen) authScreen.style.display = "none";
       if (chatContainer) chatContainer.style.display = "flex";
@@ -68,7 +65,6 @@ window.addEventListener("DOMContentLoaded", () => {
       updateUserHeader();
       listenForUsers();
       listenForMessages();
-      listenForTyping();
       initPeerConnection();
 
       document.body.addEventListener('click', unlockAudio, { once: true });
@@ -76,7 +72,6 @@ window.addEventListener("DOMContentLoaded", () => {
       currentUser = null;
       if (userListUnsubscribe) userListUnsubscribe();
       if (messageUnsubscribe) messageUnsubscribe();
-      if (typingUnsubscribe) typingUnsubscribe();
       if (authScreen) authScreen.style.display = "flex";
       if (chatContainer) chatContainer.style.display = "none";
     }
@@ -106,23 +101,6 @@ async function saveUserToDirectory() {
   }, { merge: true });
 }
 
-function setupUserPresence() {
-  if (!currentUser) return;
-  const userStatusRef = db.collection("users").doc(currentUser.uid);
-
-  userStatusRef.set({
-    isOnline: true,
-    lastSeen: firebase.firestore.FieldValue.serverTimestamp()
-  }, { merge: true });
-
-  window.addEventListener("beforeunload", () => {
-    userStatusRef.set({
-      isOnline: false,
-      lastSeen: firebase.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
-  });
-}
-
 function unlockAudio() {
   const notifSound = document.getElementById("notif-sound");
   if (notifSound) {
@@ -149,64 +127,9 @@ function updateUserHeader() {
   if (headerPfp) headerPfp.innerText = icon;
 }
 
-// 2. Typing Indicators
-window.handleInputUpdate = function () {
-  const input = document.getElementById("msg-input");
-  const counter = document.getElementById("char-counter-node");
-  if (input && counter) {
-    counter.innerText = `${input.value.length} / 250`;
-  }
-
-  if (!currentUser || !currentChatId || !input) return;
-
-  const typingRef = db.collection("typing_status").doc(`${currentChatId}_${currentUser.uid}`);
-
-  if (input.value.trim().length > 0) {
-    typingRef.set({
-      username: userProfileData.username || currentUser.displayName || "Wolf",
-      isTyping: true,
-      chatId: currentChatId,
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
-
-    clearTimeout(typingTimeout);
-    typingTimeout = setTimeout(() => {
-      typingRef.set({ isTyping: false }, { merge: true });
-    }, 2500);
-  } else {
-    typingRef.set({ isTyping: false }, { merge: true });
-  }
-};
-
-function listenForTyping() {
-  if (typingUnsubscribe) typingUnsubscribe();
-
-  const indicator = document.getElementById("typing-indicator-text");
-  if (!indicator || !currentChatId) return;
-
-  typingUnsubscribe = db.collection("typing_status")
-    .where("chatId", "==", currentChatId)
-    .where("isTyping", "==", true)
-    .onSnapshot((snapshot) => {
-      let typers = [];
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        if (data.username && doc.id !== `${currentChatId}_${currentUser.uid}`) {
-          typers.push(data.username);
-        }
-      });
-
-      if (typers.length > 0) {
-        indicator.innerText = `${typers.join(", ")} ${typers.length > 1 ? "are" : "is"} typing...`;
-      } else {
-        indicator.innerText = "";
-      }
-    });
-}
-
-// 3. PeerJS Audio & Video Calling Setup
+// 2. PeerJS Audio & Video Calling Setup
 function initPeerConnection() {
-  if (!currentUser || peer || typeof Peer === "undefined") return;
+  if (!currentUser || peer) return;
 
   peer = new Peer(currentUser.uid);
 
@@ -291,7 +214,7 @@ window.endActiveCall = function () {
   localMediaStream = null;
 };
 
-// 4. User Directory for DMs & Status
+// 3. User Directory for DMs
 function listenForUsers() {
   const dmUsersList = document.getElementById("dm-users-list");
   if (!dmUsersList) return;
@@ -304,12 +227,7 @@ function listenForUsers() {
       if (currentUser && user.uid !== currentUser.uid) {
         const userBtn = document.createElement("button");
         userBtn.className = "navigation-item";
-        
-        const onlineDot = user.isOnline 
-          ? `<span style="height: 8px; width: 8px; background-color: #39ff14; border-radius: 50%; display: inline-block; margin-right: 6px; box-shadow: 0 0 6px #39ff14;"></span>`
-          : `<span style="height: 8px; width: 8px; background-color: #777; border-radius: 50%; display: inline-block; margin-right: 6px;"></span>`;
-
-        userBtn.innerHTML = `${onlineDot} ${user.pfpIcon || '🐺'} <span style="color:${user.color || '#fff'}">${user.username || 'User'}</span>`;
+        userBtn.innerHTML = `💬 ${user.pfpIcon || '🐺'} <span style="color:${user.color || '#fff'}">${user.username || 'User'}</span>`;
         userBtn.onclick = () => openDirectMessage(user.uid, user.username);
         dmUsersList.appendChild(userBtn);
       }
@@ -317,14 +235,13 @@ function listenForUsers() {
   });
 }
 
-// 5. Navigation & DM Routing
+// 4. Navigation & DM Routing
 window.switchChannel = function (channelName) {
   isDirectMessage = false;
   activeDmPartnerUid = null;
   currentChatId = channelName;
   document.getElementById("active-chat-title").innerText = `Room: ${channelName}`;
   listenForMessages();
-  listenForTyping();
   toggleSidebarMenu();
 };
 
@@ -336,11 +253,10 @@ window.openDirectMessage = function (targetUid, targetUsername) {
 
   document.getElementById("active-chat-title").innerText = `DM: ${targetUsername}`;
   listenForMessages();
-  listenForTyping();
   toggleSidebarMenu();
 };
 
-// 6. Message Engine
+// 5. Message Engine
 function listenForMessages() {
   if (messageUnsubscribe) messageUnsubscribe();
 
@@ -396,7 +312,7 @@ function listenForMessages() {
   });
 }
 
-// 7. Send Message
+// 6. Send Message
 window.sendMessage = async function () {
   const input = document.getElementById("msg-input");
   const text = input ? input.value.trim() : "";
@@ -423,10 +339,6 @@ window.sendMessage = async function () {
     }
 
     await collectionRef.add(payload);
-    
-    // Clear typing state in DB
-    db.collection("typing_status").doc(`${currentChatId}_${currentUser.uid}`).set({ isTyping: false }, { merge: true });
-
     if (input) input.value = "";
     handleInputUpdate();
   } catch (error) {
@@ -434,7 +346,7 @@ window.sendMessage = async function () {
   }
 };
 
-// 8. Voice Notes
+// 7. Voice Notes
 window.toggleVoiceRecording = async function () {
   const micBtn = document.getElementById("mic-record-btn");
 
@@ -480,7 +392,7 @@ window.toggleVoiceRecording = async function () {
   }
 };
 
-// 9. Attachments & Drawers
+// 8. Attachments & Drawers
 window.toggleAttachmentMenu = function () {
   const drawer = document.getElementById("attachment-drawer-hud");
   if (drawer) drawer.style.display = drawer.style.display === "none" ? "block" : "none";
@@ -515,7 +427,7 @@ window.injectSticker = function (stickerEmoji) {
   toggleAttachmentMenu();
 };
 
-// 10. Profile Settings
+// 9. Profile Settings
 window.saveSystemSettings = async function () {
   const newUsername = document.getElementById("settings-username-input").value.trim();
   const newIcon = document.getElementById("settings-pfp-select")?.value;
@@ -545,7 +457,7 @@ window.saveSystemSettings = async function () {
   }
 };
 
-// 11. Auth Handlers
+// 10. Auth Handlers
 window.toggleAuthMode = function () {
   const extraFields = document.getElementById("signup-extra-fields");
   const mainBtn = document.getElementById("auth-main-btn");
@@ -558,7 +470,7 @@ window.toggleAuthMode = function () {
   } else {
     extraFields.style.display = "none";
     mainBtn.innerText = "Sign In";
-    toggleLink.innerText = "Don't have an account? Sign in here";
+    toggleLink.innerText = "Don't have an account? Sign up here";
   }
 };
 
@@ -621,4 +533,12 @@ window.openSettingsModal = function () {
 window.closeSettingsModal = function () {
   const modal = document.getElementById("settings-modal");
   if (modal) modal.style.display = "none";
+};
+
+window.handleInputUpdate = function () {
+  const input = document.getElementById("msg-input");
+  const counter = document.getElementById("char-counter-node");
+  if (input && counter) {
+    counter.innerText = `${input.value.length} / 250`;
+  }
 };
