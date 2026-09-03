@@ -253,7 +253,7 @@ body {
   color: #fff;
   font-size: 20px;
   cursor: pointer;
-  display: none;
+  display: block;
 }
 
 .header-right-cluster {
@@ -386,10 +386,6 @@ body {
 
 /* 10. Responsive Queries */
 @media (max-width: 768px) {
-  #hamburger-menu-btn {
-    display: block;
-  }
-
   #chat-sidebar {
     position: absolute;
     top: 0;
