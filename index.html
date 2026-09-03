@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Wolf Chat</title>
   
+  <!-- Firebase Compatibility SDKs (Matching your original script imports) -->
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
@@ -13,6 +14,7 @@
 </head>
 <body>
 
+  <!-- Loading Screen -->
   <div id="loading-screen">
     <div class="wolf-logo">🐺</div>
     <h2>WOLF CHAT</h2>
@@ -25,6 +27,7 @@
   <div id="desktop-ambient-viewport">
     <div id="app-wallpaper-shroud"></div>
 
+    <!-- Authentication Screen -->
     <div id="auth-screen">
       <div class="auth-box">
         <div class="auth-brand-header">
@@ -75,8 +78,10 @@
       </div>
     </div>
 
+    <!-- Main Chat Interface -->
     <div id="chat-container" style="display: none;">
       
+      <!-- Channels Sidebar -->
       <div id="chat-sidebar" class="sidebar-hidden">
         <div id="sidebar-main-view">
           <div class="sidebar-header">
@@ -101,6 +106,7 @@
         </div>
       </div>
 
+      <!-- Active Chat Room Area -->
       <div id="chat-main">
         <div id="chat-header">
           <button id="hamburger-menu-btn" onclick="toggleSidebarMenu()">☰</button>
@@ -155,6 +161,7 @@
     </div>
   </div>
 
+  <!-- Settings Modal -->
   <div id="settings-modal" class="modal-overlay">
     <div class="modal-box">
       <div class="modal-header">
@@ -195,6 +202,7 @@
 
   <audio id="notif-sound" src="https://assets.mixkit.co/active_storage/sfx/2357/2357-84.wav" preload="auto"></audio>
 
+  <!-- Application Engine -->
   <script src="script.js"></script>
 </body>
 </html>
