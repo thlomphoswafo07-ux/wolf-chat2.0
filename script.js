@@ -1,5 +1,5 @@
 // ==========================================
-// Wolf Chat Engine - DM Enabled
+// Wolf Chat Engine - DM & PeerJS Calling Enabled
 // ==========================================
 
 const firebaseConfig = {
@@ -33,6 +33,12 @@ let mediaRecorder = null;
 let audioChunks = [];
 let isRecording = false;
 
+// Calling System Variables (PeerJS)
+let peer = null;
+let currentCall = null;
+let localMediaStream = null;
+let activeDmPartnerUid = null;
+
 // 1. App Initialization & Auth State
 window.addEventListener("DOMContentLoaded", () => {
   const loadingScreen = document.getElementById("loading-screen");
@@ -59,6 +65,7 @@ window.addEventListener("DOMContentLoaded", () => {
       updateUserHeader();
       listenForUsers();
       listenForMessages();
+      initPeerConnection();
 
       document.body.addEventListener('click', unlockAudio, { once: true });
     } else {
@@ -120,7 +127,94 @@ function updateUserHeader() {
   if (headerPfp) headerPfp.innerText = icon;
 }
 
-// 2. Fetch User Directory for DMs
+// 2. PeerJS Audio & Video Calling Setup
+function initPeerConnection() {
+  if (!currentUser || peer) return;
+
+  peer = new Peer(currentUser.uid);
+
+  peer.on('call', async (incomingCall) => {
+    const accept = confirm("Incoming Call! Do you want to answer?");
+    if (accept) {
+      try {
+        localMediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        document.getElementById("local-video").srcObject = localMediaStream;
+        document.getElementById("call-screen-overlay").style.display = "flex";
+
+        incomingCall.answer(localMediaStream);
+        currentCall = incomingCall;
+
+        incomingCall.on('stream', (remoteStream) => {
+          document.getElementById("remote-video").srcObject = remoteStream;
+        });
+
+        incomingCall.on('close', () => endActiveCall());
+      } catch (err) {
+        alert("Camera and Microphone permissions are required to take calls.");
+      }
+    } else {
+      incomingCall.close();
+    }
+  });
+}
+
+window.startCall = async function (isVideo = true) {
+  if (!isDirectMessage || !activeDmPartnerUid) {
+    alert("Select a user under Direct Messages to start a call!");
+    return;
+  }
+
+  try {
+    localMediaStream = await navigator.mediaDevices.getUserMedia({ video: isVideo, audio: true });
+    document.getElementById("local-video").srcObject = localMediaStream;
+    document.getElementById("call-screen-overlay").style.display = "flex";
+    document.getElementById("call-status-text").innerText = "Calling...";
+
+    const outgoingCall = peer.call(activeDmPartnerUid, localMediaStream);
+    currentCall = outgoingCall;
+
+    outgoingCall.on('stream', (remoteStream) => {
+      document.getElementById("call-status-text").innerText = "Connected";
+      document.getElementById("remote-video").srcObject = remoteStream;
+    });
+
+    outgoingCall.on('close', () => endActiveCall());
+  } catch (err) {
+    alert("Camera or Microphone permission denied.");
+  }
+};
+
+window.toggleMuteMic = function () {
+  if (localMediaStream) {
+    const audioTrack = localMediaStream.getAudioTracks()[0];
+    if (audioTrack) {
+      audioTrack.enabled = !audioTrack.enabled;
+      document.getElementById("toggle-mic-btn").style.background = audioTrack.enabled ? "#202c33" : "#ff0055";
+    }
+  }
+};
+
+window.toggleMuteCam = function () {
+  if (localMediaStream) {
+    const videoTrack = localMediaStream.getVideoTracks()[0];
+    if (videoTrack) {
+      videoTrack.enabled = !videoTrack.enabled;
+      document.getElementById("toggle-cam-btn").style.background = videoTrack.enabled ? "#202c33" : "#ff0055";
+    }
+  }
+};
+
+window.endActiveCall = function () {
+  if (currentCall) currentCall.close();
+  if (localMediaStream) {
+    localMediaStream.getTracks().forEach(track => track.stop());
+  }
+  document.getElementById("call-screen-overlay").style.display = "none";
+  currentCall = null;
+  localMediaStream = null;
+};
+
+// 3. User Directory for DMs
 function listenForUsers() {
   const dmUsersList = document.getElementById("dm-users-list");
   if (!dmUsersList) return;
@@ -141,9 +235,10 @@ function listenForUsers() {
   });
 }
 
-// 3. Channel & DM Navigation
+// 4. Navigation & DM Routing
 window.switchChannel = function (channelName) {
   isDirectMessage = false;
+  activeDmPartnerUid = null;
   currentChatId = channelName;
   document.getElementById("active-chat-title").innerText = `Room: ${channelName}`;
   listenForMessages();
@@ -152,7 +247,7 @@ window.switchChannel = function (channelName) {
 
 window.openDirectMessage = function (targetUid, targetUsername) {
   isDirectMessage = true;
-  // Unique sorted ID ensures both users open the exact same message thread
+  activeDmPartnerUid = targetUid;
   const dmRoomId = [currentUser.uid, targetUid].sort().join("_");
   currentChatId = dmRoomId;
 
@@ -161,7 +256,7 @@ window.openDirectMessage = function (targetUid, targetUsername) {
   toggleSidebarMenu();
 };
 
-// 4. Real-time Message Listener
+// 5. Message Engine
 function listenForMessages() {
   if (messageUnsubscribe) messageUnsubscribe();
 
@@ -217,7 +312,7 @@ function listenForMessages() {
   });
 }
 
-// 5. Send Message Function
+// 6. Send Message
 window.sendMessage = async function () {
   const input = document.getElementById("msg-input");
   const text = input ? input.value.trim() : "";
@@ -251,7 +346,7 @@ window.sendMessage = async function () {
   }
 };
 
-// 6. Voice Notes
+// 7. Voice Notes
 window.toggleVoiceRecording = async function () {
   const micBtn = document.getElementById("mic-record-btn");
 
@@ -297,7 +392,7 @@ window.toggleVoiceRecording = async function () {
   }
 };
 
-// 7. Attachments & Utilities
+// 8. Attachments & Drawers
 window.toggleAttachmentMenu = function () {
   const drawer = document.getElementById("attachment-drawer-hud");
   if (drawer) drawer.style.display = drawer.style.display === "none" ? "block" : "none";
@@ -332,7 +427,7 @@ window.injectSticker = function (stickerEmoji) {
   toggleAttachmentMenu();
 };
 
-// 8. Profile Settings Modal
+// 9. Profile Settings
 window.saveSystemSettings = async function () {
   const newUsername = document.getElementById("settings-username-input").value.trim();
   const newIcon = document.getElementById("settings-pfp-select")?.value;
@@ -362,7 +457,7 @@ window.saveSystemSettings = async function () {
   }
 };
 
-// 9. Auth Handlers
+// 10. Auth Handlers
 window.toggleAuthMode = function () {
   const extraFields = document.getElementById("signup-extra-fields");
   const mainBtn = document.getElementById("auth-main-btn");
