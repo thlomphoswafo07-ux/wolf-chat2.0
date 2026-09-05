@@ -431,11 +431,50 @@ body {
   transform: translateY(0);
 }
 
+/* Reaction Picker Floating HUD - Instagram Style with Delayed Hide */
+.reaction-picker-hud {
+  display: flex !important;
+  gap: 6px;
+  background: #111b21;
+  border: 1px solid #222d34;
+  padding: 4px 8px;
+  border-radius: 20px;
+  position: absolute;
+  top: -32px;
+  opacity: 0;
+  pointer-events: none;
+  /* 1530ms delay when fading out so it stays visible long enough to click */
+  transition: opacity 0.2s ease 1.53s, transform 0.2s ease 1.53s;
+  transform: translateY(6px);
+  z-index: 10;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+/* Align picker left for incoming messages, right for sent messages */
+.message-node .reaction-picker-hud {
+  left: 8px;
+}
+
+.message-node.my-message .reaction-picker-hud {
+  right: 8px;
+  left: auto;
+}
+
+/* Hover trigger (Desktop) - Shows immediately with zero delay on entry */
+.message-node:hover .reaction-picker-hud,
+.reaction-picker-hud:hover {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+  transition-delay: 0s; /* Appears instantly on hover */
+}
+
 /* Long press / active class trigger (Mobile & Touch) */
 .message-node.show-picker .reaction-picker-hud {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);
+  transition-delay: 0s;
 }
 
 .reaction-picker-hud span {
