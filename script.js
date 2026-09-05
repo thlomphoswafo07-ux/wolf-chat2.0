@@ -1,6 +1,6 @@
-// ==================================================
-// WOLF CHAT 2.0 - INSTAGRAM-STYLE HOVER/TOUCH PICKER
-// ==================================================
+// =========================================================================
+// WOLF CHAT 2.0 - REACTIONS, REPLIES, EDITING & DELETION (5-MIN WINDOW)
+// =========================================================================
 
 const firebaseConfig = {
   apiKey: "AIzaSyBzIGdwodKyZ09EWxaJeWir0tJ2ECJ1RtM",
@@ -162,7 +162,7 @@ function updateUserHeader() {
   }
 }
 
-// Typing Status
+// Typing Indicators
 window.handleInputUpdate = function () {
   const input = document.getElementById("msg-input");
   const counter = document.getElementById("char-counter-node");
@@ -215,7 +215,7 @@ function listenForTyping() {
     });
 }
 
-// User List
+// Users Directory
 function listenForUsers() {
   const dmUsersList = document.getElementById("dm-users-list");
   if (!dmUsersList || !db) return;
@@ -252,7 +252,7 @@ function listenForUsers() {
   });
 }
 
-// Switching Chat
+// Channel Routing
 window.switchChannel = function (channelName) {
   isDirectMessage = false;
   activeDmPartnerUid = null;
@@ -284,7 +284,7 @@ window.openDirectMessage = function (targetUid, targetUsername, targetUserData =
   toggleSidebarMenu();
 };
 
-// Reactions Handler
+// Reactions Engine
 window.toggleReaction = async function (docId, emoji) {
   if (!currentUser || !db) return;
 
@@ -311,6 +311,39 @@ window.toggleReaction = async function (docId, emoji) {
     await collectionRef.update({ reactions: reactions });
   } catch (err) {
     console.error("Reaction error:", err);
+  }
+};
+
+// Message Edit & Delete Functions
+window.editMessage = async function (msgId, currentText) {
+  const newText = prompt("Edit your message:", currentText);
+  if (newText === null || newText.trim() === "" || newText.trim() === currentText) return;
+
+  const collectionRef = isDirectMessage
+    ? db.collection("direct_messages").doc(currentChatId).collection("messages").doc(msgId)
+    : db.collection("channels").doc(currentChatId).collection("messages").doc(msgId);
+
+  try {
+    await collectionRef.update({
+      text: newText.trim(),
+      isEdited: true
+    });
+  } catch (e) {
+    alert("Failed to edit message.");
+  }
+};
+
+window.deleteMessage = async function (msgId) {
+  if (!confirm("Are you sure you want to delete this message for everyone?")) return;
+
+  const collectionRef = isDirectMessage
+    ? db.collection("direct_messages").doc(currentChatId).collection("messages").doc(msgId)
+    : db.collection("channels").doc(currentChatId).collection("messages").doc(msgId);
+
+  try {
+    await collectionRef.delete();
+  } catch (e) {
+    alert("Failed to delete message.");
   }
 };
 
@@ -345,7 +378,7 @@ window.cancelReply = function () {
   if (tray) tray.style.display = "none";
 };
 
-// Listen for Messages
+// Message Listener
 function listenForMessages() {
   if (messageUnsubscribe) messageUnsubscribe();
 
@@ -374,12 +407,17 @@ function listenForMessages() {
       const msgElement = document.createElement("div");
       msgElement.classList.add("message-node");
       msgElement.style.position = "relative";
-      msgElement.style.marginBottom = "14px"; // Spacing for floating reaction bar
+      msgElement.style.marginBottom = "14px";
 
       const isMe = currentUser && msg.senderId === currentUser.uid;
       if (isMe) msgElement.classList.add("my-message");
 
-      // Tap / Long Press Support for Mobile
+      // Check 5-minute window for Edit/Delete (300,000 ms)
+      const now = Date.now();
+      const msgTime = msg.timestamp ? msg.timestamp.toMillis() : now;
+      const isWithinFiveMinutes = (now - msgTime) <= 300000;
+
+      // Touch / Long Press for Mobile
       let touchTimer = null;
       msgElement.addEventListener("touchstart", () => {
         touchTimer = setTimeout(() => {
@@ -396,6 +434,8 @@ function listenForMessages() {
           : `<span style="font-size:10px; color:#888; margin-left:6px;">✓ Sent</span>`;
       }
 
+      const editedTag = msg.isEdited ? `<small style="font-size:9px; color:#aaa; margin-left:4px;">(edited)</small>` : "";
+
       // Quoted Reply Banner
       let replyBanner = "";
       if (msg.replyTo) {
@@ -406,7 +446,7 @@ function listenForMessages() {
           </div>`;
       }
 
-      // Existing Reaction Badges Below Message
+      // Reactions Display Tray
       let reactionsListHtml = "";
       if (msg.reactions && Object.keys(msg.reactions).length > 0) {
         reactionsListHtml = `<div class="reactions-display-tray" style="display:flex; gap:4px; margin-top:4px; flex-wrap:wrap;">`;
@@ -424,7 +464,17 @@ function listenForMessages() {
 
       const previewSnippet = msg.text ? msg.text.replace(/'/g, "\\'") : (msg.imageUrl ? '📷 Photo' : '🎤 Voice Note');
 
-      // Floating Reaction HUD (Invisible until Hover / Long Press)
+      // Floating Reaction HUD + Edit/Delete Options
+      let editBtn = "";
+      let deleteBtn = "";
+
+      if (isMe && isWithinFiveMinutes) {
+        if (msg.text) {
+          editBtn = `<span onclick="editMessage('${msgId}', '${previewSnippet}')" style="font-size:11px; color:#ffaa00; margin-left:4px; font-weight:bold; cursor:pointer;">✏️</span>`;
+        }
+        deleteBtn = `<span onclick="deleteMessage('${msgId}')" style="font-size:11px; color:#ff4444; margin-left:4px; font-weight:bold; cursor:pointer;">🗑️</span>`;
+      }
+
       const messageToolbar = `
         <div class="reaction-picker-hud">
           <span onclick="toggleReaction('${msgId}', '👍')" style="font-size:14px;">👍</span>
@@ -432,7 +482,9 @@ function listenForMessages() {
           <span onclick="toggleReaction('${msgId}', '🔥')" style="font-size:14px;">🔥</span>
           <span onclick="toggleReaction('${msgId}', '😂')" style="font-size:14px;">😂</span>
           <span onclick="toggleReaction('${msgId}', '😮')" style="font-size:14px;">😮</span>
-          <span onclick="setReplyTarget('${msg.sender}', '${previewSnippet}')" style="font-size:11px; color:#00ebff; margin-left:4px; font-weight:bold;">↩</span>
+          <span onclick="setReplyTarget('${msg.sender}', '${previewSnippet}')" style="font-size:11px; color:#00ebff; margin-left:4px; font-weight:bold; cursor:pointer;">↩</span>
+          ${editBtn}
+          ${deleteBtn}
         </div>`;
 
       let content = `${messageToolbar}${replyBanner}<div class="message-meta"><span class="message-sender" style="color:${msg.color || '#39ff14'}">${msg.sender || 'Anonymous'}</span></div>`;
@@ -442,7 +494,7 @@ function listenForMessages() {
       } else if (msg.imageUrl) {
         content += `<div class="message-body"><img src="${msg.imageUrl}" style="max-width:200px; border-radius:8px;">${seenBadge}</div>`;
       } else {
-        content += `<div class="message-body">${msg.text}${seenBadge}</div>`;
+        content += `<div class="message-body">${msg.text}${editedTag}${seenBadge}</div>`;
       }
 
       content += reactionsListHtml;
@@ -456,7 +508,7 @@ function listenForMessages() {
   });
 }
 
-// Send Message
+// Send Message Engine
 window.sendMessage = async function () {
   const input = document.getElementById("msg-input");
   const text = input ? input.value.trim() : "";
@@ -543,7 +595,7 @@ window.saveSystemSettings = async function () {
   }
 };
 
-// PeerJS Calls
+// PeerJS Video & Voice Calls
 function initPeerConnection() {
   if (!currentUser || peer || typeof Peer === "undefined") return;
 
@@ -610,7 +662,7 @@ window.endActiveCall = function () {
   localMediaStream = null;
 };
 
-// Voice Recording & Attachments
+// Voice Recording & Drawers
 window.toggleVoiceRecording = async function () {
   const micBtn = document.getElementById("mic-record-btn");
 
