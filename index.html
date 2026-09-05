@@ -136,12 +136,26 @@
 
         <!-- Input Control Panel -->
         <div id="input-area-wrapper" style="padding: 10px; display: flex; align-items: center; gap: 8px; position: relative;">
-          <div id="attachment-drawer-hud" style="display: none; position: absolute; bottom: 60px; left: 10px; background: #111b21; border: 1px solid #222d34; border-radius: 8px; padding: 10px; z-index: 10;">
-            <button onclick="triggerImageUpload()" style="background: #202c33; border: none; color: #fff; padding: 8px; border-radius: 6px; cursor: pointer; display: block; width: 100%; margin-bottom: 5px;">📷 Photo</button>
-            <div style="display: flex; gap: 5px; margin-top: 5px;">
+          
+          <!-- Attachment Drawer HUD (With Integrated GIF Search) -->
+          <div id="attachment-drawer-hud" style="display: none; position: absolute; bottom: 60px; left: 10px; background: #111b21; border: 1px solid #222d34; border-radius: 8px; padding: 10px; z-index: 10; width: 280px;">
+            <button onclick="triggerImageUpload()" style="background: #202c33; border: none; color: #fff; padding: 8px; border-radius: 6px; cursor: pointer; display: block; width: 100%; margin-bottom: 8px;">📷 Upload Photo</button>
+            
+            <!-- GIF Search Tool -->
+            <div style="border-top: 1px solid #222d34; padding-top: 8px; margin-bottom: 8px;">
+              <div style="display: flex; gap: 5px; margin-bottom: 6px;">
+                <input type="text" id="gif-search-input" placeholder="Search GIFs..." style="flex: 1; background: #202c33; border: 1px solid #2a3942; color: #fff; padding: 6px; border-radius: 6px; font-size: 12px; outline: none;">
+                <button onclick="searchGifs()" style="background: #00ebff; color: #000; border: none; padding: 6px 10px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px;">Search</button>
+              </div>
+              <div id="gif-results-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; max-height: 120px; overflow-y: auto;"></div>
+            </div>
+
+            <div style="display: flex; gap: 5px; justify-content: space-around; border-top: 1px solid #222d34; padding-top: 8px;">
               <button onclick="injectSticker('🔥')" style="background: transparent; border: none; font-size: 20px; cursor: pointer;">🔥</button>
               <button onclick="injectSticker('⚡')" style="background: transparent; border: none; font-size: 20px; cursor: pointer;">⚡</button>
               <button onclick="injectSticker('🎮')" style="background: transparent; border: none; font-size: 20px; cursor: pointer;">🎮</button>
+              <button onclick="injectSticker('👑')" style="background: transparent; border: none; font-size: 20px; cursor: pointer;">👑</button>
+              <button onclick="injectSticker('🐺')" style="background: transparent; border: none; font-size: 20px; cursor: pointer;">🐺</button>
             </div>
           </div>
 
@@ -172,7 +186,7 @@
     </div>
   </div>
 
-  <!-- Settings Modal with Sleep Mode & Custom Picture -->
+  <!-- Settings Modal with Sleep Mode, Custom Picture, & Room Wallpapers -->
   <div id="settings-modal" class="modal-overlay" style="display: none;">
     <div class="modal-box">
       <div class="modal-header">
@@ -207,6 +221,19 @@
       <div class="input-group">
         <label for="settings-color-picker">Username Color</label>
         <input type="color" id="settings-color-picker" value="#39ff14">
+      </div>
+
+      <!-- Chat Room Wallpaper Option -->
+      <div class="input-group" style="margin-top: 10px; border-top: 1px solid #222d34; padding-top: 10px;">
+        <label style="color: #00ebff;">Chat Wallpaper</label>
+        <select id="settings-wallpaper-select" onchange="previewWallpaper(this.value)" style="width: 100%; background: #202c33; border: 1px solid #2a3942; color: #fff; padding: 8px; border-radius: 6px; outline: none; margin-bottom: 6px;">
+          <option value="default">Default Dark</option>
+          <option value="matrix">Matrix Cyber</option>
+          <option value="sunset">Neon Sunset</option>
+          <option value="ocean">Deep Ocean</option>
+          <option value="custom">Custom Wallpaper Image URL...</option>
+        </select>
+        <input type="text" id="custom-wallpaper-url-input" placeholder="Paste Image URL (https://...)" style="display: none; width: 100%; background: #202c33; border: 1px solid #2a3942; color: #fff; padding: 8px; border-radius: 6px; outline: none;">
       </div>
 
       <div class="input-group" style="display: flex; align-items: center; justify-content: space-between; margin-top: 15px;">
