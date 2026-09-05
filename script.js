@@ -1,5 +1,5 @@
 // ==========================================
-// WOLF CHAT 2.0 - FULL ENGINE WITH ALL FEATURES
+// WOLF CHAT 2.0 - FULL ENGINE WITH REACTIONS
 // ==========================================
 
 const firebaseConfig = {
@@ -51,7 +51,7 @@ function hideLoadingScreen() {
 }
 setTimeout(hideLoadingScreen, 1500);
 
-// App Init
+// App Initialization
 window.addEventListener("DOMContentLoaded", () => {
   if (!auth) return;
 
@@ -122,7 +122,6 @@ async function saveUserToDirectory() {
   }
 }
 
-// Presence & Sleep Mode
 function setupUserPresence() {
   if (!currentUser || !db) return;
   const userStatusRef = db.collection("users").doc(currentUser.uid);
@@ -164,7 +163,7 @@ function updateUserHeader() {
   }
 }
 
-// Typing Status
+// Typing Indicators
 window.handleInputUpdate = function () {
   const input = document.getElementById("msg-input");
   const counter = document.getElementById("char-counter-node");
@@ -217,7 +216,7 @@ function listenForTyping() {
     });
 }
 
-// Users Directory + Online/Last Seen Logic
+// Users Directory
 function listenForUsers() {
   const dmUsersList = document.getElementById("dm-users-list");
   if (!dmUsersList || !db) return;
@@ -254,7 +253,7 @@ function listenForUsers() {
   });
 }
 
-// Navigation
+// Channel Routing
 window.switchChannel = function (channelName) {
   isDirectMessage = false;
   activeDmPartnerUid = null;
@@ -284,7 +283,37 @@ window.openDirectMessage = function (targetUid, targetUsername, targetUserData =
   toggleSidebarMenu();
 };
 
-// Message Engine with Seen Status
+// Message Reactions Engine
+window.toggleReaction = async function (docId, emoji) {
+  if (!currentUser || !db) return;
+
+  const collectionRef = isDirectMessage
+    ? db.collection("direct_messages").doc(currentChatId).collection("messages").doc(docId)
+    : db.collection("channels").doc(currentChatId).collection("messages").doc(docId);
+
+  try {
+    const doc = await collectionRef.get();
+    if (!doc.exists) return;
+
+    let reactions = doc.data().reactions || {};
+
+    if (!reactions[emoji]) reactions[emoji] = [];
+
+    const userIndex = reactions[emoji].indexOf(currentUser.uid);
+    if (userIndex > -1) {
+      reactions[emoji].splice(userIndex, 1);
+      if (reactions[emoji].length === 0) delete reactions[emoji];
+    } else {
+      reactions[emoji].push(currentUser.uid);
+    }
+
+    await collectionRef.update({ reactions: reactions });
+  } catch (err) {
+    console.error("Reaction update error:", err);
+  }
+};
+
+// Messages Listener
 function listenForMessages() {
   if (messageUnsubscribe) messageUnsubscribe();
 
@@ -306,13 +335,13 @@ function listenForMessages() {
       const msg = doc.data();
       const msgId = doc.id;
 
-      // Mark incoming messages as SEEN
       if (currentUser && msg.senderId !== currentUser.uid && !msg.seen) {
         collectionRef.doc(msgId).update({ seen: true });
       }
 
       const msgElement = document.createElement("div");
       msgElement.classList.add("message-node");
+      msgElement.style.position = "relative";
 
       const isMe = currentUser && msg.senderId === currentUser.uid;
       if (isMe) msgElement.classList.add("my-message");
@@ -324,6 +353,32 @@ function listenForMessages() {
           : `<span style="font-size:10px; color:#888; margin-left:6px;">✓ Sent</span>`;
       }
 
+      // Reactions UI
+      let reactionsListHtml = "";
+      if (msg.reactions && Object.keys(msg.reactions).length > 0) {
+        reactionsListHtml = `<div class="reactions-display-tray" style="display:flex; gap:4px; margin-top:4px; flex-wrap:wrap;">`;
+        for (const [emoji, uids] of Object.entries(msg.reactions)) {
+          if (uids.length > 0) {
+            const hasReacted = currentUser && uids.includes(currentUser.uid);
+            reactionsListHtml += `
+              <span onclick="toggleReaction('${msgId}', '${emoji}')" style="background:${hasReacted ? '#00ebff33' : '#202c33'}; border:1px solid ${hasReacted ? '#00ebff' : '#334155'}; padding:2px 6px; border-radius:12px; font-size:11px; cursor:pointer;">
+                ${emoji} ${uids.length}
+              </span>`;
+          }
+        }
+        reactionsListHtml += `</div>`;
+      }
+
+      // Quick Reaction Picker Bar
+      const reactionPickerHtml = `
+        <div class="reaction-picker-hud" style="display:flex; gap:6px; background:#111b21; border:1px solid #222d34; padding:4px 8px; border-radius:20px; margin-top:4px; width:fit-content;">
+          <span onclick="toggleReaction('${msgId}', '👍')" style="cursor:pointer; font-size:14px;">👍</span>
+          <span onclick="toggleReaction('${msgId}', '❤️')" style="cursor:pointer; font-size:14px;">❤️</span>
+          <span onclick="toggleReaction('${msgId}', '🔥')" style="cursor:pointer; font-size:14px;">🔥</span>
+          <span onclick="toggleReaction('${msgId}', '😂')" style="cursor:pointer; font-size:14px;">😂</span>
+          <span onclick="toggleReaction('${msgId}', '😮')" style="cursor:pointer; font-size:14px;">😮</span>
+        </div>`;
+
       let content = `<div class="message-meta"><span class="message-sender" style="color:${msg.color || '#39ff14'}">${msg.sender || 'Anonymous'}</span></div>`;
 
       if (msg.audioUrl) {
@@ -333,6 +388,8 @@ function listenForMessages() {
       } else {
         content += `<div class="message-body">${msg.text}${seenBadge}</div>`;
       }
+
+      content += reactionsListHtml + reactionPickerHtml;
 
       msgElement.innerHTML = content;
       messagesContainer.appendChild(msgElement);
@@ -360,6 +417,7 @@ window.sendMessage = async function () {
       senderId: currentUser.uid,
       color: userProfileData.color || "#39ff14",
       seen: false,
+      reactions: {},
       timestamp: firebase.firestore.FieldValue.serverTimestamp()
     };
 
@@ -380,7 +438,7 @@ window.sendMessage = async function () {
   }
 };
 
-// Handle Custom Profile Picture Selection
+// Profile & Media Handlers
 window.handleCustomPfpSelect = function(event) {
   const file = event.target.files[0];
   if (file) {
@@ -394,7 +452,6 @@ window.handleCustomPfpSelect = function(event) {
   }
 };
 
-// Save Profile Settings (Custom Picture & Sleep Mode)
 window.saveSystemSettings = async function () {
   const newUsername = document.getElementById("settings-username-input").value.trim();
   const newIcon = document.getElementById("settings-pfp-select")?.value;
@@ -427,7 +484,7 @@ window.saveSystemSettings = async function () {
   }
 };
 
-// PeerJS Setup
+// PeerJS Calls
 function initPeerConnection() {
   if (!currentUser || peer || typeof Peer === "undefined") return;
 
@@ -494,7 +551,7 @@ window.endActiveCall = function () {
   localMediaStream = null;
 };
 
-// Voice Notes & Drawers
+// Voice Recording & Drawers
 window.toggleVoiceRecording = async function () {
   const micBtn = document.getElementById("mic-record-btn");
 
@@ -523,6 +580,7 @@ window.toggleVoiceRecording = async function () {
             senderId: currentUser.uid,
             color: userProfileData.color || "#39ff14",
             seen: false,
+            reactions: {},
             timestamp: firebase.firestore.FieldValue.serverTimestamp()
           });
         };
