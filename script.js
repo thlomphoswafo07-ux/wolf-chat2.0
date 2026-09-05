@@ -1,5 +1,5 @@
 // ==========================================
-// Wolf Chat Engine - DM & PeerJS Calling Enabled
+// WOLF CHAT 2.0 - FULL ENGINE WITH ALL FEATURES
 // ==========================================
 
 const firebaseConfig = {
@@ -12,12 +12,12 @@ const firebaseConfig = {
   appId: "1:810966020901:web:4e5cfefca32b00cc45a0cc"
 };
 
-if (!firebase.apps.length) {
+if (typeof firebase !== "undefined" && !firebase.apps.length) {
   firebase.initializeApp(firebaseConfig);
 }
 
-const db = firebase.firestore();
-const auth = firebase.auth();
+const db = typeof firebase !== "undefined" ? firebase.firestore() : null;
+const auth = typeof firebase !== "undefined" ? firebase.auth() : null;
 
 let currentUser = null;
 let userProfileData = {};
@@ -25,39 +25,47 @@ let currentChatId = "General-Alpha";
 let isDirectMessage = false;
 let messageUnsubscribe = null;
 let userListUnsubscribe = null;
+let typingUnsubscribe = null;
 let isInitialLoad = true;
 let selectedImageData = null;
+let customPfpData = null;
+let typingTimeout = null;
 
-// Voice Recorder variables
 let mediaRecorder = null;
 let audioChunks = [];
 let isRecording = false;
 
-// Calling System Variables (PeerJS)
 let peer = null;
 let currentCall = null;
 let localMediaStream = null;
 let activeDmPartnerUid = null;
 
-// 1. App Initialization & Auth State
-window.addEventListener("DOMContentLoaded", () => {
+// Failsafe Loading Screen Hide
+function hideLoadingScreen() {
   const loadingScreen = document.getElementById("loading-screen");
-  const progressBar = document.getElementById("progress-bar");
+  if (loadingScreen) {
+    loadingScreen.style.opacity = "0";
+    loadingScreen.style.transition = "opacity 0.5s ease";
+    setTimeout(() => { loadingScreen.style.display = "none"; }, 500);
+  }
+}
+setTimeout(hideLoadingScreen, 1500);
 
-  if (progressBar) progressBar.style.width = "100%";
-
-  setTimeout(() => {
-    if (loadingScreen) loadingScreen.style.display = "none";
-  }, 4000);
+// App Init
+window.addEventListener("DOMContentLoaded", () => {
+  if (!auth) return;
 
   auth.onAuthStateChanged(async (user) => {
     const authScreen = document.getElementById("auth-screen");
     const chatContainer = document.getElementById("chat-container");
 
+    hideLoadingScreen();
+
     if (user) {
       currentUser = user;
       await fetchUserProfile();
       await saveUserToDirectory();
+      setupUserPresence();
       
       if (authScreen) authScreen.style.display = "none";
       if (chatContainer) chatContainer.style.display = "flex";
@@ -65,13 +73,13 @@ window.addEventListener("DOMContentLoaded", () => {
       updateUserHeader();
       listenForUsers();
       listenForMessages();
+      listenForTyping();
       initPeerConnection();
-
-      document.body.addEventListener('click', unlockAudio, { once: true });
     } else {
       currentUser = null;
       if (userListUnsubscribe) userListUnsubscribe();
       if (messageUnsubscribe) messageUnsubscribe();
+      if (typingUnsubscribe) typingUnsubscribe();
       if (authScreen) authScreen.style.display = "flex";
       if (chatContainer) chatContainer.style.display = "none";
     }
@@ -79,36 +87,59 @@ window.addEventListener("DOMContentLoaded", () => {
 });
 
 async function fetchUserProfile() {
-  if (!currentUser) return;
-  const doc = await db.collection("users").doc(currentUser.uid).get();
-  if (doc.exists) {
-    userProfileData = doc.data();
+  if (!currentUser || !db) return;
+  try {
+    const doc = await db.collection("users").doc(currentUser.uid).get();
+    if (doc.exists) {
+      userProfileData = doc.data();
+    }
+  } catch (e) {
+    console.error("Profile fetch error:", e);
   }
 }
 
 async function saveUserToDirectory() {
-  if (!currentUser) return;
+  if (!currentUser || !db) return;
   const username = userProfileData.username || currentUser.displayName || currentUser.email.split("@")[0];
   const color = userProfileData.color || "#39ff14";
   const pfpIcon = userProfileData.pfpIcon || "🐺";
+  const pfpImage = userProfileData.pfpImage || null;
+  const isSleepMode = userProfileData.isSleepMode || false;
 
-  await db.collection("users").doc(currentUser.uid).set({
-    uid: currentUser.uid,
-    username: username,
-    color: color,
-    pfpIcon: pfpIcon,
-    lastSeen: firebase.firestore.FieldValue.serverTimestamp()
-  }, { merge: true });
+  try {
+    await db.collection("users").doc(currentUser.uid).set({
+      uid: currentUser.uid,
+      username: username,
+      color: color,
+      pfpIcon: pfpIcon,
+      pfpImage: pfpImage,
+      isSleepMode: isSleepMode,
+      isOnline: !isSleepMode,
+      lastSeen: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  } catch (e) {
+    console.error("Directory save error:", e);
+  }
 }
 
-function unlockAudio() {
-  const notifSound = document.getElementById("notif-sound");
-  if (notifSound) {
-    notifSound.play().then(() => {
-      notifSound.pause();
-      notifSound.currentTime = 0;
-    }).catch(() => {});
+// Presence & Sleep Mode
+function setupUserPresence() {
+  if (!currentUser || !db) return;
+  const userStatusRef = db.collection("users").doc(currentUser.uid);
+
+  if (!userProfileData.isSleepMode) {
+    userStatusRef.set({
+      isOnline: true,
+      lastSeen: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
   }
+
+  window.addEventListener("beforeunload", () => {
+    userStatusRef.set({
+      isOnline: false,
+      lastSeen: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  });
 }
 
 function updateUserHeader() {
@@ -118,25 +149,294 @@ function updateUserHeader() {
 
   const name = userProfileData.username || currentUser.displayName || currentUser.email.split("@")[0];
   const color = userProfileData.color || "#39ff14";
-  const icon = userProfileData.pfpIcon || "🐺";
 
   if (userDisplay) {
     userDisplay.innerText = name;
     userDisplay.style.color = color;
   }
-  if (headerPfp) headerPfp.innerText = icon;
+  
+  if (headerPfp) {
+    if (userProfileData.pfpImage) {
+      headerPfp.innerHTML = `<img src="${userProfileData.pfpImage}" style="width:28px; height:28px; border-radius:50%; object-fit:cover;">`;
+    } else {
+      headerPfp.innerText = userProfileData.pfpIcon || "🐺";
+    }
+  }
 }
 
-// 2. PeerJS Audio & Video Calling Setup
+// Typing Status
+window.handleInputUpdate = function () {
+  const input = document.getElementById("msg-input");
+  const counter = document.getElementById("char-counter-node");
+  if (input && counter) counter.innerText = `${input.value.length} / 250`;
+
+  if (!currentUser || !currentChatId || !input || !db) return;
+
+  const typingRef = db.collection("typing_status").doc(`${currentChatId}_${currentUser.uid}`);
+
+  if (input.value.trim().length > 0) {
+    typingRef.set({
+      username: userProfileData.username || currentUser.displayName || "Wolf",
+      isTyping: true,
+      chatId: currentChatId,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    clearTimeout(typingTimeout);
+    typingTimeout = setTimeout(() => {
+      typingRef.set({ isTyping: false }, { merge: true });
+    }, 2500);
+  } else {
+    typingRef.set({ isTyping: false }, { merge: true });
+  }
+};
+
+function listenForTyping() {
+  if (typingUnsubscribe) typingUnsubscribe();
+
+  const indicator = document.getElementById("typing-indicator-text");
+  if (!indicator || !currentChatId || !db) return;
+
+  typingUnsubscribe = db.collection("typing_status")
+    .where("chatId", "==", currentChatId)
+    .where("isTyping", "==", true)
+    .onSnapshot((snapshot) => {
+      let typers = [];
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        if (data.username && doc.id !== `${currentChatId}_${currentUser.uid}`) {
+          typers.push(data.username);
+        }
+      });
+
+      if (typers.length > 0) {
+        indicator.innerText = `${typers.join(", ")} ${typers.length > 1 ? "are" : "is"} typing...`;
+      } else {
+        indicator.innerText = "";
+      }
+    });
+}
+
+// Users Directory + Online/Last Seen Logic
+function listenForUsers() {
+  const dmUsersList = document.getElementById("dm-users-list");
+  if (!dmUsersList || !db) return;
+
+  userListUnsubscribe = db.collection("users").onSnapshot((snapshot) => {
+    dmUsersList.innerHTML = "";
+
+    snapshot.forEach((doc) => {
+      const user = doc.data();
+      if (currentUser && user.uid !== currentUser.uid) {
+        const userBtn = document.createElement("button");
+        userBtn.className = "navigation-item";
+
+        let statusDot = `<span style="height: 8px; width: 8px; background-color: #777; border-radius: 50%; display: inline-block; margin-right: 6px;"></span>`;
+        let statusText = "Offline";
+
+        if (user.isSleepMode) {
+          statusDot = `<span style="height: 8px; width: 8px; background-color: #ffaa00; border-radius: 50%; display: inline-block; margin-right: 6px;"></span>`;
+          statusText = "Sleeping 🌙";
+        } else if (user.isOnline) {
+          statusDot = `<span style="height: 8px; width: 8px; background-color: #39ff14; border-radius: 50%; display: inline-block; margin-right: 6px; box-shadow: 0 0 6px #39ff14;"></span>`;
+          statusText = "Online";
+        }
+
+        const avatar = user.pfpImage 
+          ? `<img src="${user.pfpImage}" style="width:20px; height:20px; border-radius:50%; vertical-align:middle; margin-right:5px;">`
+          : `${user.pfpIcon || '🐺'} `;
+
+        userBtn.innerHTML = `${statusDot} ${avatar} <span style="color:${user.color || '#fff'}">${user.username || 'User'}</span> <small style="font-size:9px; color:#aaa; margin-left: auto;">${statusText}</small>`;
+        userBtn.onclick = () => openDirectMessage(user.uid, user.username, user);
+        dmUsersList.appendChild(userBtn);
+      }
+    });
+  });
+}
+
+// Navigation
+window.switchChannel = function (channelName) {
+  isDirectMessage = false;
+  activeDmPartnerUid = null;
+  currentChatId = channelName;
+  document.getElementById("active-chat-title").innerText = `Room: ${channelName}`;
+  listenForMessages();
+  listenForTyping();
+  toggleSidebarMenu();
+};
+
+window.openDirectMessage = function (targetUid, targetUsername, targetUserData = null) {
+  isDirectMessage = true;
+  activeDmPartnerUid = targetUid;
+  const dmRoomId = [currentUser.uid, targetUid].sort().join("_");
+  currentChatId = dmRoomId;
+
+  let headerStatus = "@" + targetUsername;
+  if (targetUserData) {
+    if (targetUserData.isSleepMode) headerStatus += " (Sleeping 🌙)";
+    else if (targetUserData.isOnline) headerStatus += " (Online)";
+    else headerStatus += " (Offline)";
+  }
+
+  document.getElementById("active-chat-title").innerText = headerStatus;
+  listenForMessages();
+  listenForTyping();
+  toggleSidebarMenu();
+};
+
+// Message Engine with Seen Status
+function listenForMessages() {
+  if (messageUnsubscribe) messageUnsubscribe();
+
+  const messagesContainer = document.getElementById("messages");
+  if (!db) return;
+
+  isInitialLoad = true;
+
+  const collectionRef = isDirectMessage
+    ? db.collection("direct_messages").doc(currentChatId).collection("messages")
+    : db.collection("channels").doc(currentChatId).collection("messages");
+
+  messageUnsubscribe = collectionRef.orderBy("timestamp", "asc").onSnapshot((snapshot) => {
+    if (!messagesContainer) return;
+
+    messagesContainer.innerHTML = "";
+
+    snapshot.forEach((doc) => {
+      const msg = doc.data();
+      const msgId = doc.id;
+
+      // Mark incoming messages as SEEN
+      if (currentUser && msg.senderId !== currentUser.uid && !msg.seen) {
+        collectionRef.doc(msgId).update({ seen: true });
+      }
+
+      const msgElement = document.createElement("div");
+      msgElement.classList.add("message-node");
+
+      const isMe = currentUser && msg.senderId === currentUser.uid;
+      if (isMe) msgElement.classList.add("my-message");
+
+      let seenBadge = "";
+      if (isMe) {
+        seenBadge = msg.seen 
+          ? `<span style="font-size:10px; color:#00ebff; margin-left:6px;">✓✓ Seen</span>`
+          : `<span style="font-size:10px; color:#888; margin-left:6px;">✓ Sent</span>`;
+      }
+
+      let content = `<div class="message-meta"><span class="message-sender" style="color:${msg.color || '#39ff14'}">${msg.sender || 'Anonymous'}</span></div>`;
+
+      if (msg.audioUrl) {
+        content += `<div class="message-body"><audio controls src="${msg.audioUrl}"></audio>${seenBadge}</div>`;
+      } else if (msg.imageUrl) {
+        content += `<div class="message-body"><img src="${msg.imageUrl}" style="max-width:200px; border-radius:8px;">${seenBadge}</div>`;
+      } else {
+        content += `<div class="message-body">${msg.text}${seenBadge}</div>`;
+      }
+
+      msgElement.innerHTML = content;
+      messagesContainer.appendChild(msgElement);
+    });
+
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    isInitialLoad = false;
+  });
+}
+
+// Send Message
+window.sendMessage = async function () {
+  const input = document.getElementById("msg-input");
+  const text = input ? input.value.trim() : "";
+
+  if ((text === "" && !selectedImageData) || !currentUser || !db) return;
+
+  try {
+    const collectionRef = isDirectMessage
+      ? db.collection("direct_messages").doc(currentChatId).collection("messages")
+      : db.collection("channels").doc(currentChatId).collection("messages");
+
+    const payload = {
+      sender: userProfileData.username || currentUser.displayName || currentUser.email.split("@")[0],
+      senderId: currentUser.uid,
+      color: userProfileData.color || "#39ff14",
+      seen: false,
+      timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    };
+
+    if (selectedImageData) {
+      payload.imageUrl = selectedImageData;
+      cancelMediaSelection();
+    } else {
+      payload.text = text;
+    }
+
+    await collectionRef.add(payload);
+    db.collection("typing_status").doc(`${currentChatId}_${currentUser.uid}`).set({ isTyping: false }, { merge: true });
+
+    if (input) input.value = "";
+    handleInputUpdate();
+  } catch (error) {
+    console.error("Error sending message:", error);
+  }
+};
+
+// Handle Custom Profile Picture Selection
+window.handleCustomPfpSelect = function(event) {
+  const file = event.target.files[0];
+  if (file) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      customPfpData = e.target.result;
+      const preview = document.getElementById("settings-pfp-preview");
+      if (preview) preview.src = customPfpData;
+    };
+    reader.readAsDataURL(file);
+  }
+};
+
+// Save Profile Settings (Custom Picture & Sleep Mode)
+window.saveSystemSettings = async function () {
+  const newUsername = document.getElementById("settings-username-input").value.trim();
+  const newIcon = document.getElementById("settings-pfp-select")?.value;
+  const newColor = document.getElementById("settings-color-picker")?.value;
+  const sleepToggle = document.getElementById("settings-sleep-toggle")?.checked;
+
+  if (!currentUser) return;
+
+  try {
+    const updatedName = newUsername || userProfileData.username || currentUser.displayName || currentUser.email.split("@")[0];
+
+    if (newUsername !== "") {
+      await currentUser.updateProfile({ displayName: newUsername });
+    }
+
+    userProfileData = {
+      username: updatedName,
+      pfpIcon: newIcon || "🐺",
+      pfpImage: customPfpData || userProfileData.pfpImage || null,
+      color: newColor || "#39ff14",
+      isSleepMode: sleepToggle || false
+    };
+
+    await saveUserToDirectory();
+    updateUserHeader();
+    closeSettingsModal();
+    alert("Settings updated!");
+  } catch (err) {
+    alert("Save error: " + err.message);
+  }
+};
+
+// PeerJS Setup
 function initPeerConnection() {
-  if (!currentUser || peer) return;
+  if (!currentUser || peer || typeof Peer === "undefined") return;
 
-  peer = new Peer(currentUser.uid);
+  try {
+    peer = new Peer(currentUser.uid);
 
-  peer.on('call', async (incomingCall) => {
-    const accept = confirm("Incoming Call! Do you want to answer?");
-    if (accept) {
-      try {
+    peer.on('call', async (incomingCall) => {
+      const accept = confirm("Incoming Call! Answer?");
+      if (accept) {
         localMediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         document.getElementById("local-video").srcObject = localMediaStream;
         document.getElementById("call-screen-overlay").style.display = "flex";
@@ -149,13 +449,13 @@ function initPeerConnection() {
         });
 
         incomingCall.on('close', () => endActiveCall());
-      } catch (err) {
-        alert("Camera and Microphone permissions are required to take calls.");
+      } else {
+        incomingCall.close();
       }
-    } else {
-      incomingCall.close();
-    }
-  });
+    });
+  } catch (e) {
+    console.error("PeerJS initialization failed:", e);
+  }
 }
 
 window.startCall = async function (isVideo = true) {
@@ -184,26 +484,6 @@ window.startCall = async function (isVideo = true) {
   }
 };
 
-window.toggleMuteMic = function () {
-  if (localMediaStream) {
-    const audioTrack = localMediaStream.getAudioTracks()[0];
-    if (audioTrack) {
-      audioTrack.enabled = !audioTrack.enabled;
-      document.getElementById("toggle-mic-btn").style.background = audioTrack.enabled ? "#202c33" : "#ff0055";
-    }
-  }
-};
-
-window.toggleMuteCam = function () {
-  if (localMediaStream) {
-    const videoTrack = localMediaStream.getVideoTracks()[0];
-    if (videoTrack) {
-      videoTrack.enabled = !videoTrack.enabled;
-      document.getElementById("toggle-cam-btn").style.background = videoTrack.enabled ? "#202c33" : "#ff0055";
-    }
-  }
-};
-
 window.endActiveCall = function () {
   if (currentCall) currentCall.close();
   if (localMediaStream) {
@@ -214,139 +494,7 @@ window.endActiveCall = function () {
   localMediaStream = null;
 };
 
-// 3. User Directory for DMs
-function listenForUsers() {
-  const dmUsersList = document.getElementById("dm-users-list");
-  if (!dmUsersList) return;
-
-  userListUnsubscribe = db.collection("users").onSnapshot((snapshot) => {
-    dmUsersList.innerHTML = "";
-
-    snapshot.forEach((doc) => {
-      const user = doc.data();
-      if (currentUser && user.uid !== currentUser.uid) {
-        const userBtn = document.createElement("button");
-        userBtn.className = "navigation-item";
-        userBtn.innerHTML = `💬 ${user.pfpIcon || '🐺'} <span style="color:${user.color || '#fff'}">${user.username || 'User'}</span>`;
-        userBtn.onclick = () => openDirectMessage(user.uid, user.username);
-        dmUsersList.appendChild(userBtn);
-      }
-    });
-  });
-}
-
-// 4. Navigation & DM Routing
-window.switchChannel = function (channelName) {
-  isDirectMessage = false;
-  activeDmPartnerUid = null;
-  currentChatId = channelName;
-  document.getElementById("active-chat-title").innerText = `Room: ${channelName}`;
-  listenForMessages();
-  toggleSidebarMenu();
-};
-
-window.openDirectMessage = function (targetUid, targetUsername) {
-  isDirectMessage = true;
-  activeDmPartnerUid = targetUid;
-  const dmRoomId = [currentUser.uid, targetUid].sort().join("_");
-  currentChatId = dmRoomId;
-
-  document.getElementById("active-chat-title").innerText = `DM: ${targetUsername}`;
-  listenForMessages();
-  toggleSidebarMenu();
-};
-
-// 5. Message Engine
-function listenForMessages() {
-  if (messageUnsubscribe) messageUnsubscribe();
-
-  const messagesContainer = document.getElementById("messages");
-  const notifSound = document.getElementById("notif-sound");
-  isInitialLoad = true;
-
-  const collectionRef = isDirectMessage
-    ? db.collection("direct_messages").doc(currentChatId).collection("messages")
-    : db.collection("channels").doc(currentChatId).collection("messages");
-
-  messageUnsubscribe = collectionRef.orderBy("timestamp", "asc").onSnapshot((snapshot) => {
-    if (!messagesContainer) return;
-
-    snapshot.docChanges().forEach((change) => {
-      if (change.type === "added" && !isInitialLoad) {
-        const msgData = change.doc.data();
-        if (currentUser && msgData.senderId !== currentUser.uid) {
-          if (notifSound) {
-            notifSound.currentTime = 0;
-            notifSound.play().catch(e => console.log("Audio play error:", e));
-          }
-        }
-      }
-    });
-
-    messagesContainer.innerHTML = "";
-
-    snapshot.forEach((doc) => {
-      const msg = doc.data();
-      const msgElement = document.createElement("div");
-      msgElement.classList.add("message-node");
-
-      const isMe = currentUser && msg.senderId === currentUser.uid;
-      if (isMe) msgElement.classList.add("my-message");
-
-      let content = `<div class="message-meta"><span class="message-sender" style="color:${msg.color || '#39ff14'}">${msg.sender || 'Anonymous'}</span></div>`;
-
-      if (msg.audioUrl) {
-        content += `<div class="message-body"><audio controls src="${msg.audioUrl}"></audio></div>`;
-      } else if (msg.imageUrl) {
-        content += `<div class="message-body"><img src="${msg.imageUrl}" style="max-width:200px; border-radius:8px;"></div>`;
-      } else {
-        content += `<div class="message-body">${msg.text}</div>`;
-      }
-
-      msgElement.innerHTML = content;
-      messagesContainer.appendChild(msgElement);
-    });
-
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    isInitialLoad = false;
-  });
-}
-
-// 6. Send Message
-window.sendMessage = async function () {
-  const input = document.getElementById("msg-input");
-  const text = input ? input.value.trim() : "";
-
-  if ((text === "" && !selectedImageData) || !currentUser) return;
-
-  try {
-    const collectionRef = isDirectMessage
-      ? db.collection("direct_messages").doc(currentChatId).collection("messages")
-      : db.collection("channels").doc(currentChatId).collection("messages");
-
-    const payload = {
-      sender: userProfileData.username || currentUser.displayName || currentUser.email.split("@")[0],
-      senderId: currentUser.uid,
-      color: userProfileData.color || "#39ff14",
-      timestamp: firebase.firestore.FieldValue.serverTimestamp()
-    };
-
-    if (selectedImageData) {
-      payload.imageUrl = selectedImageData;
-      cancelMediaSelection();
-    } else {
-      payload.text = text;
-    }
-
-    await collectionRef.add(payload);
-    if (input) input.value = "";
-    handleInputUpdate();
-  } catch (error) {
-    console.error("Error sending message:", error);
-  }
-};
-
-// 7. Voice Notes
+// Voice Notes & Drawers
 window.toggleVoiceRecording = async function () {
   const micBtn = document.getElementById("mic-record-btn");
 
@@ -363,6 +511,8 @@ window.toggleVoiceRecording = async function () {
         reader.readAsDataURL(audioBlob);
         reader.onloadend = async () => {
           const base64Audio = reader.result;
+          if (!db) return;
+
           const collectionRef = isDirectMessage
             ? db.collection("direct_messages").doc(currentChatId).collection("messages")
             : db.collection("channels").doc(currentChatId).collection("messages");
@@ -372,6 +522,7 @@ window.toggleVoiceRecording = async function () {
             sender: userProfileData.username || currentUser.displayName || currentUser.email.split("@")[0],
             senderId: currentUser.uid,
             color: userProfileData.color || "#39ff14",
+            seen: false,
             timestamp: firebase.firestore.FieldValue.serverTimestamp()
           });
         };
@@ -379,27 +530,31 @@ window.toggleVoiceRecording = async function () {
 
       mediaRecorder.start();
       isRecording = true;
-      micBtn.style.background = "#ff0055";
-      micBtn.innerText = "🛑";
+      if (micBtn) {
+        micBtn.style.background = "#ff0055";
+        micBtn.innerText = "🛑";
+      }
     } catch (err) {
       alert("Microphone permission denied.");
     }
   } else {
-    mediaRecorder.stop();
+    if (mediaRecorder) mediaRecorder.stop();
     isRecording = false;
-    micBtn.style.background = "";
-    micBtn.innerText = "🎤";
+    if (micBtn) {
+      micBtn.style.background = "";
+      micBtn.innerText = "🎤";
+    }
   }
 };
 
-// 8. Attachments & Drawers
 window.toggleAttachmentMenu = function () {
   const drawer = document.getElementById("attachment-drawer-hud");
   if (drawer) drawer.style.display = drawer.style.display === "none" ? "block" : "none";
 };
 
 window.triggerImageUpload = function () {
-  document.getElementById("hidden-file-input").click();
+  const hiddenInput = document.getElementById("hidden-file-input");
+  if (hiddenInput) hiddenInput.click();
 };
 
 window.handleImageSelect = function (event) {
@@ -427,37 +582,6 @@ window.injectSticker = function (stickerEmoji) {
   toggleAttachmentMenu();
 };
 
-// 9. Profile Settings
-window.saveSystemSettings = async function () {
-  const newUsername = document.getElementById("settings-username-input").value.trim();
-  const newIcon = document.getElementById("settings-pfp-select")?.value;
-  const newColor = document.getElementById("settings-color-picker")?.value;
-
-  if (!currentUser) return;
-
-  try {
-    const updatedName = newUsername || userProfileData.username || currentUser.displayName || currentUser.email.split("@")[0];
-
-    if (newUsername !== "") {
-      await currentUser.updateProfile({ displayName: newUsername });
-    }
-
-    userProfileData = {
-      username: updatedName,
-      pfpIcon: newIcon || "🐺",
-      color: newColor || "#39ff14"
-    };
-
-    await saveUserToDirectory();
-    updateUserHeader();
-    closeSettingsModal();
-    alert("Profile saved successfully!");
-  } catch (err) {
-    alert("Save error: " + err.message);
-  }
-};
-
-// 10. Auth Handlers
 window.toggleAuthMode = function () {
   const extraFields = document.getElementById("signup-extra-fields");
   const mainBtn = document.getElementById("auth-main-btn");
@@ -470,7 +594,7 @@ window.toggleAuthMode = function () {
   } else {
     extraFields.style.display = "none";
     mainBtn.innerText = "Sign In";
-    toggleLink.innerText = "Don't have an account? Sign up here";
+    toggleLink.innerText = "Don't have an account? Sign in here";
   }
 };
 
@@ -481,6 +605,8 @@ window.handleAuthSubmit = async function () {
   const color = document.getElementById("color-picker")?.value;
   const icon = document.getElementById("auth-pfp-select")?.value;
   const isSignUp = document.getElementById("signup-extra-fields").style.display !== "none";
+
+  if (!auth) return;
 
   try {
     if (isSignUp) {
@@ -498,26 +624,8 @@ window.handleAuthSubmit = async function () {
   }
 };
 
-window.handleGoogleSignIn = async function () {
-  const provider = new firebase.auth.GoogleAuthProvider();
-  try {
-    await auth.signInWithPopup(provider);
-  } catch (err) {
-    alert("Google error: " + err.message);
-  }
-};
-
-window.handleFacebookSignIn = async function () {
-  const provider = new firebase.auth.FacebookAuthProvider();
-  try {
-    await auth.signInWithPopup(provider);
-  } catch (err) {
-    alert("Facebook error: " + err.message);
-  }
-};
-
 window.handleLogout = function () {
-  auth.signOut();
+  if (auth) auth.signOut();
 };
 
 window.toggleSidebarMenu = function () {
@@ -527,18 +635,15 @@ window.toggleSidebarMenu = function () {
 
 window.openSettingsModal = function () {
   const modal = document.getElementById("settings-modal");
-  if (modal) modal.style.display = "flex";
+  if (modal) {
+    modal.style.display = "flex";
+    if (document.getElementById("settings-sleep-toggle")) {
+      document.getElementById("settings-sleep-toggle").checked = userProfileData.isSleepMode || false;
+    }
+  }
 };
 
 window.closeSettingsModal = function () {
   const modal = document.getElementById("settings-modal");
   if (modal) modal.style.display = "none";
-};
-
-window.handleInputUpdate = function () {
-  const input = document.getElementById("msg-input");
-  const counter = document.getElementById("char-counter-node");
-  if (input && counter) {
-    counter.innerText = `${input.value.length} / 250`;
-  }
 };
