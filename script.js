@@ -1,6 +1,6 @@
-// ==========================================
-// WOLF CHAT 2.0 - FULL ENGINE WITH REACTIONS
-// ==========================================
+// ==================================================
+// WOLF CHAT 2.0 - INSTAGRAM-STYLE HOVER/TOUCH PICKER
+// ==================================================
 
 const firebaseConfig = {
   apiKey: "AIzaSyBzIGdwodKyZ09EWxaJeWir0tJ2ECJ1RtM",
@@ -30,6 +30,7 @@ let isInitialLoad = true;
 let selectedImageData = null;
 let customPfpData = null;
 let typingTimeout = null;
+let replyingToMessage = null;
 
 let mediaRecorder = null;
 let audioChunks = [];
@@ -40,7 +41,7 @@ let currentCall = null;
 let localMediaStream = null;
 let activeDmPartnerUid = null;
 
-// Failsafe Loading Screen Hide
+// Failsafe Loading Screen
 function hideLoadingScreen() {
   const loadingScreen = document.getElementById("loading-screen");
   if (loadingScreen) {
@@ -90,9 +91,7 @@ async function fetchUserProfile() {
   if (!currentUser || !db) return;
   try {
     const doc = await db.collection("users").doc(currentUser.uid).get();
-    if (doc.exists) {
-      userProfileData = doc.data();
-    }
+    if (doc.exists) userProfileData = doc.data();
   } catch (e) {
     console.error("Profile fetch error:", e);
   }
@@ -163,7 +162,7 @@ function updateUserHeader() {
   }
 }
 
-// Typing Indicators
+// Typing Status
 window.handleInputUpdate = function () {
   const input = document.getElementById("msg-input");
   const counter = document.getElementById("char-counter-node");
@@ -216,7 +215,7 @@ function listenForTyping() {
     });
 }
 
-// Users Directory
+// User List
 function listenForUsers() {
   const dmUsersList = document.getElementById("dm-users-list");
   if (!dmUsersList || !db) return;
@@ -253,11 +252,12 @@ function listenForUsers() {
   });
 }
 
-// Channel Routing
+// Switching Chat
 window.switchChannel = function (channelName) {
   isDirectMessage = false;
   activeDmPartnerUid = null;
   currentChatId = channelName;
+  cancelReply();
   document.getElementById("active-chat-title").innerText = `Room: ${channelName}`;
   listenForMessages();
   listenForTyping();
@@ -269,6 +269,7 @@ window.openDirectMessage = function (targetUid, targetUsername, targetUserData =
   activeDmPartnerUid = targetUid;
   const dmRoomId = [currentUser.uid, targetUid].sort().join("_");
   currentChatId = dmRoomId;
+  cancelReply();
 
   let headerStatus = "@" + targetUsername;
   if (targetUserData) {
@@ -283,7 +284,7 @@ window.openDirectMessage = function (targetUid, targetUsername, targetUserData =
   toggleSidebarMenu();
 };
 
-// Message Reactions Engine
+// Reactions Handler
 window.toggleReaction = async function (docId, emoji) {
   if (!currentUser || !db) return;
 
@@ -309,11 +310,42 @@ window.toggleReaction = async function (docId, emoji) {
 
     await collectionRef.update({ reactions: reactions });
   } catch (err) {
-    console.error("Reaction update error:", err);
+    console.error("Reaction error:", err);
   }
 };
 
-// Messages Listener
+// Threaded Replies
+window.setReplyTarget = function (senderName, messageText) {
+  replyingToMessage = { sender: senderName, text: messageText };
+  
+  let tray = document.getElementById("reply-preview-tray");
+  if (!tray) {
+    tray = document.createElement("div");
+    tray.id = "reply-preview-tray";
+    tray.style.cssText = "background:#111b21; border-left:3px solid #00ebff; padding:6px 12px; margin:5px 10px; display:flex; justify-content:space-between; align-items:center; border-radius:4px; font-size:12px;";
+    const inputBar = document.querySelector(".input-bar") || document.getElementById("msg-input")?.parentElement;
+    if (inputBar && inputBar.parentNode) {
+      inputBar.parentNode.insertBefore(tray, inputBar);
+    }
+  }
+
+  tray.innerHTML = `
+    <div>
+      <span style="color:#00ebff; font-weight:bold;">Replying to ${senderName}</span>
+      <div style="color:#aaa; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:250px;">${messageText}</div>
+    </div>
+    <button onclick="cancelReply()" style="background:none; border:none; color:#ff4444; font-size:16px; cursor:pointer;">✕</button>
+  `;
+  tray.style.display = "flex";
+};
+
+window.cancelReply = function () {
+  replyingToMessage = null;
+  const tray = document.getElementById("reply-preview-tray");
+  if (tray) tray.style.display = "none";
+};
+
+// Listen for Messages
 function listenForMessages() {
   if (messageUnsubscribe) messageUnsubscribe();
 
@@ -342,9 +374,20 @@ function listenForMessages() {
       const msgElement = document.createElement("div");
       msgElement.classList.add("message-node");
       msgElement.style.position = "relative";
+      msgElement.style.marginBottom = "14px"; // Spacing for floating reaction bar
 
       const isMe = currentUser && msg.senderId === currentUser.uid;
       if (isMe) msgElement.classList.add("my-message");
+
+      // Tap / Long Press Support for Mobile
+      let touchTimer = null;
+      msgElement.addEventListener("touchstart", () => {
+        touchTimer = setTimeout(() => {
+          msgElement.classList.toggle("show-picker");
+        }, 400);
+      }, { passive: true });
+
+      msgElement.addEventListener("touchend", () => clearTimeout(touchTimer), { passive: true });
 
       let seenBadge = "";
       if (isMe) {
@@ -353,7 +396,17 @@ function listenForMessages() {
           : `<span style="font-size:10px; color:#888; margin-left:6px;">✓ Sent</span>`;
       }
 
-      // Reactions UI
+      // Quoted Reply Banner
+      let replyBanner = "";
+      if (msg.replyTo) {
+        replyBanner = `
+          <div style="background:#182229; border-left:3px solid #39ff14; padding:4px 8px; border-radius:4px; font-size:11px; margin-bottom:6px;">
+            <span style="color:#39ff14; font-weight:bold;">${msg.replyTo.sender}</span>
+            <div style="color:#bbb; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${msg.replyTo.text}</div>
+          </div>`;
+      }
+
+      // Existing Reaction Badges Below Message
       let reactionsListHtml = "";
       if (msg.reactions && Object.keys(msg.reactions).length > 0) {
         reactionsListHtml = `<div class="reactions-display-tray" style="display:flex; gap:4px; margin-top:4px; flex-wrap:wrap;">`;
@@ -369,17 +422,20 @@ function listenForMessages() {
         reactionsListHtml += `</div>`;
       }
 
-      // Quick Reaction Picker Bar
-      const reactionPickerHtml = `
-        <div class="reaction-picker-hud" style="display:flex; gap:6px; background:#111b21; border:1px solid #222d34; padding:4px 8px; border-radius:20px; margin-top:4px; width:fit-content;">
-          <span onclick="toggleReaction('${msgId}', '👍')" style="cursor:pointer; font-size:14px;">👍</span>
-          <span onclick="toggleReaction('${msgId}', '❤️')" style="cursor:pointer; font-size:14px;">❤️</span>
-          <span onclick="toggleReaction('${msgId}', '🔥')" style="cursor:pointer; font-size:14px;">🔥</span>
-          <span onclick="toggleReaction('${msgId}', '😂')" style="cursor:pointer; font-size:14px;">😂</span>
-          <span onclick="toggleReaction('${msgId}', '😮')" style="cursor:pointer; font-size:14px;">😮</span>
+      const previewSnippet = msg.text ? msg.text.replace(/'/g, "\\'") : (msg.imageUrl ? '📷 Photo' : '🎤 Voice Note');
+
+      // Floating Reaction HUD (Invisible until Hover / Long Press)
+      const messageToolbar = `
+        <div class="reaction-picker-hud">
+          <span onclick="toggleReaction('${msgId}', '👍')" style="font-size:14px;">👍</span>
+          <span onclick="toggleReaction('${msgId}', '❤️')" style="font-size:14px;">❤️</span>
+          <span onclick="toggleReaction('${msgId}', '🔥')" style="font-size:14px;">🔥</span>
+          <span onclick="toggleReaction('${msgId}', '😂')" style="font-size:14px;">😂</span>
+          <span onclick="toggleReaction('${msgId}', '😮')" style="font-size:14px;">😮</span>
+          <span onclick="setReplyTarget('${msg.sender}', '${previewSnippet}')" style="font-size:11px; color:#00ebff; margin-left:4px; font-weight:bold;">↩</span>
         </div>`;
 
-      let content = `<div class="message-meta"><span class="message-sender" style="color:${msg.color || '#39ff14'}">${msg.sender || 'Anonymous'}</span></div>`;
+      let content = `${messageToolbar}${replyBanner}<div class="message-meta"><span class="message-sender" style="color:${msg.color || '#39ff14'}">${msg.sender || 'Anonymous'}</span></div>`;
 
       if (msg.audioUrl) {
         content += `<div class="message-body"><audio controls src="${msg.audioUrl}"></audio>${seenBadge}</div>`;
@@ -389,7 +445,7 @@ function listenForMessages() {
         content += `<div class="message-body">${msg.text}${seenBadge}</div>`;
       }
 
-      content += reactionsListHtml + reactionPickerHtml;
+      content += reactionsListHtml;
 
       msgElement.innerHTML = content;
       messagesContainer.appendChild(msgElement);
@@ -421,6 +477,8 @@ window.sendMessage = async function () {
       timestamp: firebase.firestore.FieldValue.serverTimestamp()
     };
 
+    if (replyingToMessage) payload.replyTo = replyingToMessage;
+
     if (selectedImageData) {
       payload.imageUrl = selectedImageData;
       cancelMediaSelection();
@@ -432,13 +490,14 @@ window.sendMessage = async function () {
     db.collection("typing_status").doc(`${currentChatId}_${currentUser.uid}`).set({ isTyping: false }, { merge: true });
 
     if (input) input.value = "";
+    cancelReply();
     handleInputUpdate();
   } catch (error) {
     console.error("Error sending message:", error);
   }
 };
 
-// Profile & Media Handlers
+// Profile & Media
 window.handleCustomPfpSelect = function(event) {
   const file = event.target.files[0];
   if (file) {
@@ -551,7 +610,7 @@ window.endActiveCall = function () {
   localMediaStream = null;
 };
 
-// Voice Recording & Drawers
+// Voice Recording & Attachments
 window.toggleVoiceRecording = async function () {
   const micBtn = document.getElementById("mic-record-btn");
 
@@ -574,7 +633,7 @@ window.toggleVoiceRecording = async function () {
             ? db.collection("direct_messages").doc(currentChatId).collection("messages")
             : db.collection("channels").doc(currentChatId).collection("messages");
 
-          await collectionRef.add({
+          const payload = {
             audioUrl: base64Audio,
             sender: userProfileData.username || currentUser.displayName || currentUser.email.split("@")[0],
             senderId: currentUser.uid,
@@ -582,7 +641,12 @@ window.toggleVoiceRecording = async function () {
             seen: false,
             reactions: {},
             timestamp: firebase.firestore.FieldValue.serverTimestamp()
-          });
+          };
+
+          if (replyingToMessage) payload.replyTo = replyingToMessage;
+
+          await collectionRef.add(payload);
+          cancelReply();
         };
       };
 
