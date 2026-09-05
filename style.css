@@ -396,14 +396,51 @@ body {
   cursor: pointer;
 }
 
-@keyframes pulse {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.05); }
-  100% { transform: scale(1); }
+/* Reaction Picker Floating HUD - Instagram Style */
+.reaction-picker-hud {
+  display: flex !important;
+  gap: 6px;
+  background: #111b21;
+  border: 1px solid #222d34;
+  padding: 4px 8px;
+  border-radius: 20px;
+  position: absolute;
+  top: -32px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  transform: translateY(6px);
+  z-index: 10;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
-/* Reaction HUD Styling */
+
+/* Align picker left for incoming messages, right for sent messages */
+.message-node .reaction-picker-hud {
+  left: 8px;
+}
+
+.message-node.my-message .reaction-picker-hud {
+  right: 8px;
+  left: auto;
+}
+
+/* Hover trigger (Desktop) */
+.message-node:hover .reaction-picker-hud {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+/* Long press / active class trigger (Mobile & Touch) */
+.message-node.show-picker .reaction-picker-hud {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
 .reaction-picker-hud span {
   transition: transform 0.15s ease;
+  cursor: pointer;
 }
 
 .reaction-picker-hud span:hover {
