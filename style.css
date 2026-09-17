@@ -358,9 +358,12 @@ body {
 }
 
 /* ==========================================
-   8. MESSAGES & MEDIA TRAYS
+   8. MESSAGES & MEDIA TRAYS (FIXED SCROLL & LAYOUT)
    ========================================== */
 #messages {
+  flex: 1;            /* Fills vertical space between header & input */
+  overflow-y: auto;   /* Enables scrollbar when messages exceed screen height */
+  padding: 15px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -389,18 +392,27 @@ body {
   font-weight: bold;
 }
 
-/* Attachment HUD & Input */
+/* Attachment HUD & Input (Flex Aligned) */
 #input-area-wrapper {
   background: var(--bg-input);
+  padding: 10px 15px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid var(--border-color);
 }
 
 .whatsapp-input-pill-container {
+  flex: 1;
   background: #2a3942;
   border-radius: 20px;
   padding: 5px 15px;
+  display: flex;
+  align-items: center;
 }
 
 .whatsapp-input-pill-container input {
+  width: 100%;
   background: transparent;
   border: none;
   color: #fff;
@@ -415,6 +427,9 @@ body {
   color: var(--text-sub);
   font-size: 18px;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .mic-standalone-btn {
@@ -428,6 +443,7 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 /* ==========================================
@@ -475,7 +491,7 @@ body {
 }
 
 /* ==========================================
-   10. REACTION PICKER (INSTAGRAM STYLE)
+   10. REACTION PICKER (INSTAGRAM STYLE - FAST HUD FIX)
    ========================================== */
 .reaction-picker-hud {
   display: flex !important;
@@ -488,7 +504,8 @@ body {
   top: -32px;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.2s ease 1.53s, transform 0.2s ease 1.53s;
+  /* Reduced 1.53s hover delay down to 0.15s for instant pop up */
+  transition: opacity 0.2s ease 0.15s, transform 0.2s ease 0.15s;
   transform: translateY(6px);
   z-index: 10;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
