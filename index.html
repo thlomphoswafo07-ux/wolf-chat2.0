@@ -284,5 +284,107 @@
   </div>
 
   <script src="script.js"></script>
-</body>
+<!-- ========================================================================= -->
+<!-- DM SETTINGS & CUSTOMIZATION MODAL (ITEM 1 & 2) -->
+<!-- ========================================================================= -->
+<div id="dm-settings-modal" class="modal-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); z-index: 9999; justify-content: center; align-items: center;">
+  <div class="modal-content" style="background: #111b21; border: 1px solid #00ebff; border-radius: 12px; width: 90%; max-width: 420px; padding: 20px; color: #fff; box-shadow: 0 0 20px rgba(0, 235, 255, 0.2);">
+    
+    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #222d34; padding-bottom: 10px; margin-bottom: 15px;">
+      <h3 style="margin: 0; color: #00ebff; font-size: 18px;">⚙️ DM Customization</h3>
+      <button onclick="closeDmSettingsModal()" style="background: none; border: none; color: #8696a0; font-size: 20px; cursor: pointer;">✕</button>
+    </div>
+
+    <!-- Custom Nickname -->
+    <div style="margin-bottom: 15px;">
+      <label style="display: block; font-size: 12px; color: #8696a0; margin-bottom: 5px;">Custom Nickname (Only visible to you)</label>
+      <input type="text" id="dm-nickname-input" placeholder="Enter nickname..." style="width: 100%; padding: 10px; background: #202c33; border: 1px solid #334155; border-radius: 6px; color: #fff; box-sizing: border-box;">
+    </div>
+
+    <!-- Mute Notifications Toggle -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: #182229; padding: 10px; border-radius: 6px;">
+      <span style="font-size: 14px; color: #e9edef;">Mute Notifications</span>
+      <input type="checkbox" id="dm-mute-toggle" style="accent-color: #00ebff; width: 18px; height: 18px; cursor: pointer;">
+    </div>
+
+    <!-- Shared DM Wallpaper -->
+    <div style="margin-bottom: 20px;">
+      <label style="display: block; font-size: 12px; color: #8696a0; margin-bottom: 5px;">Shared Chat Background</label>
+      <input type="file" id="dm-wallpaper-input" accept="image/*" onchange="handleDmWallpaperSelect(event)" style="display: none;">
+      <button onclick="document.getElementById('dm-wallpaper-input').click()" style="width: 100%; padding: 10px; background: #202c33; border: 1px dashed #00ebff; border-radius: 6px; color: #00ebff; cursor: pointer; font-weight: bold;">
+        🖼️ Upload Shared DM Wallpaper
+      </button>
+    </div>
+
+    <!-- Modal Actions -->
+    <div style="display: flex; gap: 10px;">
+      <button onclick="saveDmSettings()" style="flex: 1; padding: 10px; background: #00ebff; border: none; border-radius: 6px; color: #000; font-weight: bold; cursor: pointer;">Save DM Settings</button>
+      <button onclick="closeDmSettingsModal()" style="padding: 10px; background: #202c33; border: 1px solid #334155; border-radius: 6px; color: #8696a0; cursor: pointer;">Cancel</button>
+    </div>
+
+  </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- UPDATED SYSTEM SETTINGS MODAL (WITH PERSONAL WALLPAPER CONTROLS) -->
+<!-- ========================================================================= -->
+<div id="settings-modal" class="modal-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); z-index: 9998; justify-content: center; align-items: center;">
+  <div class="modal-content" style="background: #111b21; border: 1px solid #39ff14; border-radius: 12px; width: 90%; max-width: 440px; padding: 20px; color: #fff; max-height: 85vh; overflow-y: auto;">
+    
+    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #222d34; padding-bottom: 10px; margin-bottom: 15px;">
+      <h3 style="margin: 0; color: #39ff14; font-size: 18px;">⚙️ App Settings</h3>
+      <button onclick="closeSettingsModal()" style="background: none; border: none; color: #8696a0; font-size: 20px; cursor: pointer;">✕</button>
+    </div>
+
+    <!-- Profile Customization -->
+    <div style="margin-bottom: 15px;">
+      <label style="display: block; font-size: 12px; color: #8696a0; margin-bottom: 5px;">Display Name</label>
+      <input type="text" id="settings-username-input" placeholder="New display name" style="width: 100%; padding: 10px; background: #202c33; border: 1px solid #334155; border-radius: 6px; color: #fff; box-sizing: border-box;">
+    </div>
+
+    <div style="margin-bottom: 15px; display: flex; gap: 10px; align-items: center;">
+      <div style="flex: 1;">
+        <label style="display: block; font-size: 12px; color: #8696a0; margin-bottom: 5px;">Username Color</label>
+        <input type="color" id="settings-color-picker" value="#39ff14" style="width: 100%; height: 38px; background: #202c33; border: 1px solid #334155; border-radius: 6px; cursor: pointer;">
+      </div>
+      <div style="flex: 1;">
+        <label style="display: block; font-size: 12px; color: #8696a0; margin-bottom: 5px;">Avatar Icon</label>
+        <select id="settings-pfp-select" style="width: 100%; padding: 9px; background: #202c33; border: 1px solid #334155; border-radius: 6px; color: #fff;">
+          <option value="🐺">🐺 Wolf</option>
+          <option value="👑">👑 Crown</option>
+          <option value="⚡">⚡ Bolt</option>
+          <option value="🔥">🔥 Fire</option>
+          <option value="🎯">🎯 Target</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Local App Wallpaper (Item 1 Fix) -->
+    <div style="margin-bottom: 15px; border-top: 1px solid #222d34; padding-top: 15px;">
+      <label style="display: block; font-size: 12px; color: #8696a0; margin-bottom: 5px;">Personal App Wallpaper (Local Storage Only)</label>
+      <input type="file" id="local-wallpaper-input" accept="image/*" onchange="handleCustomWallpaperSelect(event)" style="display: none;">
+      <button onclick="document.getElementById('local-wallpaper-input').click()" style="width: 100%; padding: 10px; background: #202c33; border: 1px solid #334155; border-radius: 6px; color: #fff; cursor: pointer; margin-bottom: 8px;">
+        📷 Upload Local Wallpaper
+      </button>
+      <div style="display: flex; gap: 6px;">
+        <button onclick="selectPresetWallpaper('')" style="flex: 1; padding: 6px; background: #182229; border: 1px solid #334155; border-radius: 4px; color: #aaa; font-size: 11px; cursor: pointer;">Default Dark</button>
+        <button onclick="selectPresetWallpaper('https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=800')" style="flex: 1; padding: 6px; background: #182229; border: 1px solid #334155; border-radius: 4px; color: #aaa; font-size: 11px; cursor: pointer;">Cyber Grid</button>
+      </div>
+    </div>
+
+    <!-- Sleep Mode -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: #182229; padding: 10px; border-radius: 6px;">
+      <span style="font-size: 14px; color: #e9edef;">Sleep Mode 🌙</span>
+      <input type="checkbox" id="settings-sleep-toggle" style="accent-color: #39ff14; width: 18px; height: 18px; cursor: pointer;">
+    </div>
+
+    <!-- Actions -->
+    <div style="display: flex; gap: 10px;">
+      <button onclick="saveSystemSettings()" style="flex: 1; padding: 10px; background: #39ff14; border: none; border-radius: 6px; color: #000; font-weight: bold; cursor: pointer;">Save Settings</button>
+      <button onclick="closeSettingsModal()" style="padding: 10px; background: #202c33; border: 1px solid #334155; border-radius: 6px; color: #8696a0; cursor: pointer;">Cancel</button>
+    </div>
+
+  </div>
+</div>
+ </body>
 </html>
