@@ -1,5 +1,5 @@
 // =========================================================================
-// WOLF CHAT 2.0 - MESSAGING, CALLS, PROFILE & WORKING WALLPAPERS
+// WOLF CHAT 2.0 - COMPLETE MESSAGING, CALLS, PROFILE & WALLPAPERS
 // =========================================================================
 
 const firebaseConfig = {
