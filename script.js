@@ -27,6 +27,7 @@ let messageUnsubscribe = null;
 let userListUnsubscribe = null;
 let typingUnsubscribe = null;
 let dmSettingsUnsubscribe = null;
+let notificationsUnsubscribe = null;
 let selectedImageData = null;
 let customPfpData = null;
 let pendingWallpaperData = null;
@@ -114,6 +115,7 @@ window.addEventListener("DOMContentLoaded", () => {
       listenForUsers();
       listenForMessages();
       listenForTyping();
+      listenForNotifications();
       initPeerConnection();
     } else {
       currentUser = null;
@@ -121,6 +123,7 @@ window.addEventListener("DOMContentLoaded", () => {
       if (messageUnsubscribe) messageUnsubscribe();
       if (typingUnsubscribe) typingUnsubscribe();
       if (dmSettingsUnsubscribe) dmSettingsUnsubscribe();
+      if (notificationsUnsubscribe) notificationsUnsubscribe();
       if (authScreen) authScreen.style.display = "flex";
       if (chatContainer) chatContainer.style.display = "none";
     }
@@ -199,6 +202,148 @@ function updateUserHeader() {
     } else {
       headerPfp.innerText = userProfileData.pfpIcon || "🐺";
     }
+  }
+}
+
+// -------------------------------------------------------------------------
+// ITEM 3: FOLLOW SYSTEM & NOTIFICATION FEED
+// -------------------------------------------------------------------------
+
+window.toggleFollowUser = async function (targetUserId) {
+  if (!currentUser || !db || currentUser.uid === targetUserId) return;
+
+  const currentUserId = currentUser.uid;
+  const myFollowingRef = db.collection("users").doc(currentUserId).collection("following").doc(targetUserId);
+  const targetFollowersRef = db.collection("users").doc(targetUserId).collection("followers").doc(currentUserId);
+
+  try {
+    const doc = await myFollowingRef.get();
+    const followBtn = document.getElementById(`follow-btn-${targetUserId}`);
+
+    if (doc.exists) {
+      // Unfollow
+      await myFollowingRef.delete();
+      await targetFollowersRef.delete();
+      if (followBtn) followBtn.textContent = "Follow";
+      updateFollowerCountUI(targetUserId, -1);
+    } else {
+      // Follow
+      await myFollowingRef.set({ timestamp: firebase.firestore.FieldValue.serverTimestamp() });
+      await targetFollowersRef.set({ timestamp: firebase.firestore.FieldValue.serverTimestamp() });
+      
+      if (followBtn) followBtn.textContent = "Unfollow";
+      updateFollowerCountUI(targetUserId, 1);
+
+      // Create Notification for Target User
+      const myName = userProfileData.username || currentUser.displayName || "Someone";
+      await createNotification(targetUserId, "follow", `${myName} started following you!`);
+    }
+  } catch (error) {
+    console.error("Error toggling follow:", error);
+  }
+};
+
+function updateFollowerCountUI(userId, change) {
+  const elem = document.getElementById(`follower-count-${userId}`);
+  if (elem) {
+    let current = parseInt(elem.textContent) || 0;
+    elem.textContent = Math.max(0, current + change);
+  }
+}
+
+async function createNotification(targetUserId, type, message) {
+  if (!db) return;
+  try {
+    await db.collection("users").doc(targetUserId).collection("notifications").add({
+      type: type,
+      message: message,
+      fromUserId: currentUser.uid,
+      read: false,
+      timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } catch (err) {
+    console.error("Notification creation error:", err);
+  }
+}
+
+window.toggleNotificationFeed = function () {
+  const modal = document.getElementById("notification-feed-modal");
+  if (!modal) return;
+
+  if (modal.style.display === "flex") {
+    modal.style.display = "none";
+  } else {
+    modal.style.display = "flex";
+    loadNotifications();
+    clearNotificationBadge();
+  }
+};
+
+function loadNotifications() {
+  if (!currentUser || !db) return;
+  const listContainer = document.getElementById("notification-list");
+  if (!listContainer) return;
+
+  db.collection("users")
+    .doc(currentUser.uid)
+    .collection("notifications")
+    .orderBy("timestamp", "desc")
+    .limit(20)
+    .onSnapshot((snapshot) => {
+      listContainer.innerHTML = "";
+      if (snapshot.empty) {
+        listContainer.innerHTML = `<div style="padding: 10px; color: #888; text-align: center;">No new notifications</div>`;
+        return;
+      }
+
+      snapshot.forEach((doc) => {
+        const notif = doc.data();
+        const timeStr = notif.timestamp ? new Date(notif.timestamp.toMillis()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        const item = document.createElement("div");
+        item.style.cssText = `padding: 10px; border-bottom: 1px solid #222; background: ${notif.read ? 'transparent' : '#112233'}; display: flex; justify-content: space-between; align-items: center;`;
+        item.innerHTML = `
+          <div>
+            <div style="font-size: 13px; color: #fff;">${notif.message}</div>
+            <small style="font-size: 10px; color: #888;">${timeStr}</small>
+          </div>
+        `;
+        listContainer.appendChild(item);
+
+        if (!notif.read) {
+          doc.ref.update({ read: true });
+        }
+      });
+    });
+}
+
+function listenForNotifications() {
+  if (!currentUser || !db) return;
+  const badge = document.getElementById("notification-badge");
+
+  if (notificationsUnsubscribe) notificationsUnsubscribe();
+
+  notificationsUnsubscribe = db.collection("users")
+    .doc(currentUser.uid)
+    .collection("notifications")
+    .where("read", "==", false)
+    .onSnapshot((snapshot) => {
+      const count = snapshot.size;
+      if (badge) {
+        if (count > 0) {
+          badge.innerText = count;
+          badge.style.display = "inline-block";
+        } else {
+          badge.style.display = "none";
+        }
+      }
+    });
+}
+
+function clearNotificationBadge() {
+  const badge = document.getElementById("notification-badge");
+  if (badge) {
+    badge.innerText = "0";
+    badge.style.display = "none";
   }
 }
 
@@ -290,7 +435,6 @@ function setupHeaderLongPress() {
 
 function openDmContextMenu() {
   const nickname = localStorage.getItem(`nickname_${activeDmPartnerUid}`) || activeDmPartnerName;
-  const isMuted = localStorage.getItem(`mute_${activeDmPartnerUid}`) === "true";
 
   const action = confirm(
     `DM Actions for @${nickname}:\n\n` +
