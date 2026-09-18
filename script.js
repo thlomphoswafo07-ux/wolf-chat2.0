@@ -1,5 +1,5 @@
 // =========================================================================
-// WOLF CHAT 2.0 - REACTIONS, REPLIES, EDITING & DELETION (5-MIN WINDOW)
+// WOLF CHAT 2.0 - MESSAGING, CALLS, PROFILE & WORKING WALLPAPERS
 // =========================================================================
 
 const firebaseConfig = {
@@ -29,6 +29,7 @@ let typingUnsubscribe = null;
 let isInitialLoad = true;
 let selectedImageData = null;
 let customPfpData = null;
+let pendingWallpaperData = null;
 let typingTimeout = null;
 let replyingToMessage = null;
 
@@ -41,7 +42,7 @@ let currentCall = null;
 let localMediaStream = null;
 let activeDmPartnerUid = null;
 
-// Image Compression Helper Function (Fixes Image Sending Lag)
+// Image Compression Helper
 function compressImage(base64Str, maxWidth = 800, maxHeight = 800, quality = 0.7) {
   return new Promise((resolve) => {
     const img = new Image();
@@ -103,6 +104,13 @@ window.addEventListener("DOMContentLoaded", () => {
       if (chatContainer) chatContainer.style.display = "flex";
       
       updateUserHeader();
+      
+      // Load Saved Wallpaper
+      const savedWallpaper = userProfileData.wallpaper || localStorage.getItem("wolf_chat_wallpaper");
+      if (savedWallpaper) {
+        applyWallpaper(savedWallpaper);
+      }
+
       listenForUsers();
       listenForMessages();
       listenForTyping();
@@ -134,6 +142,7 @@ async function saveUserToDirectory() {
   const color = userProfileData.color || "#39ff14";
   const pfpIcon = userProfileData.pfpIcon || "🐺";
   const pfpImage = userProfileData.pfpImage || null;
+  const wallpaper = userProfileData.wallpaper || null;
   const isSleepMode = userProfileData.isSleepMode || false;
 
   try {
@@ -143,6 +152,7 @@ async function saveUserToDirectory() {
       color: color,
       pfpIcon: pfpIcon,
       pfpImage: pfpImage,
+      wallpaper: wallpaper,
       isSleepMode: isSleepMode,
       isOnline: !isSleepMode,
       lastSeen: firebase.firestore.FieldValue.serverTimestamp()
@@ -192,6 +202,39 @@ function updateUserHeader() {
     }
   }
 }
+
+// WALLPAPER ENGINE
+window.handleCustomWallpaperSelect = function (event) {
+  const file = event.target.files[0];
+  if (file) {
+    const reader = new FileReader();
+    reader.onload = async function (e) {
+      pendingWallpaperData = await compressImage(e.target.result, 1280, 1280, 0.7);
+      alert("Gallery wallpaper selected! Click Save Settings to apply.");
+    };
+    reader.readAsDataURL(file);
+  }
+};
+
+window.selectPresetWallpaper = function (url) {
+  pendingWallpaperData = url;
+  alert("Preset wallpaper selected! Click Save Settings to apply.");
+};
+
+window.applyWallpaper = function (wallpaperUrl) {
+  const chatMain = document.getElementById("chat-main");
+  if (!chatMain) return;
+
+  if (wallpaperUrl && wallpaperUrl.trim() !== "") {
+    chatMain.style.backgroundImage = `url('${wallpaperUrl}')`;
+    chatMain.style.backgroundSize = "cover";
+    chatMain.style.backgroundPosition = "center";
+    chatMain.style.backgroundRepeat = "no-repeat";
+  } else {
+    chatMain.style.backgroundImage = "none";
+    chatMain.style.backgroundColor = "var(--bg-dark)";
+  }
+};
 
 // Typing Indicators
 window.handleInputUpdate = function () {
@@ -443,18 +486,15 @@ function listenForMessages() {
       const isMe = currentUser && msg.senderId === currentUser.uid;
       if (isMe) msgElement.classList.add("my-message");
 
-      // Check 5-minute window for Edit/Delete (300,000 ms)
       const now = Date.now();
       const msgTime = msg.timestamp ? msg.timestamp.toMillis() : now;
       const isWithinFiveMinutes = (now - msgTime) <= 300000;
 
-      // Formatting Timestamp (Bug Fix: Clean Time Display)
       const formattedTime = msg.timestamp 
         ? new Date(msg.timestamp.toMillis()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
         : '';
       const timeStampHtml = formattedTime ? `<span style="font-size:10px; color:#8696a0; margin-left:8px;">${formattedTime}</span>` : '';
 
-      // Touch / Long Press for Mobile
       let touchTimer = null;
       msgElement.addEventListener("touchstart", () => {
         touchTimer = setTimeout(() => {
@@ -473,7 +513,6 @@ function listenForMessages() {
 
       const editedTag = msg.isEdited ? `<small style="font-size:9px; color:#aaa; margin-left:4px;">(edited)</small>` : "";
 
-      // Quoted Reply Banner
       let replyBanner = "";
       if (msg.replyTo) {
         replyBanner = `
@@ -483,7 +522,6 @@ function listenForMessages() {
           </div>`;
       }
 
-      // Reactions Display Tray
       let reactionsListHtml = "";
       if (msg.reactions && Object.keys(msg.reactions).length > 0) {
         reactionsListHtml = `<div class="reactions-display-tray" style="display:flex; gap:4px; margin-top:4px; flex-wrap:wrap;">`;
@@ -501,7 +539,6 @@ function listenForMessages() {
 
       const previewSnippet = msg.text ? msg.text.replace(/'/g, "\\'") : (msg.imageUrl ? '📷 Photo' : '🎤 Voice Note');
 
-      // Floating Reaction HUD + Edit/Delete Options
       let editBtn = "";
       let deleteBtn = "";
 
@@ -615,7 +652,14 @@ window.saveSystemSettings = async function () {
       await currentUser.updateProfile({ displayName: newUsername });
     }
 
+    if (pendingWallpaperData !== null) {
+      userProfileData.wallpaper = pendingWallpaperData;
+      localStorage.setItem("wolf_chat_wallpaper", pendingWallpaperData);
+      applyWallpaper(pendingWallpaperData);
+    }
+
     userProfileData = {
+      ...userProfileData,
       username: updatedName,
       pfpIcon: newIcon || "🐺",
       pfpImage: customPfpData || userProfileData.pfpImage || null,
@@ -626,13 +670,13 @@ window.saveSystemSettings = async function () {
     await saveUserToDirectory();
     updateUserHeader();
     closeSettingsModal();
-    alert("Settings updated!");
+    alert("Settings & Wallpaper updated!");
   } catch (err) {
     alert("Save error: " + err.message);
   }
 };
 
-// PeerJS Video & Voice Calls
+// PeerJS Calls
 function initPeerConnection() {
   if (!currentUser || peer || typeof Peer === "undefined") return;
 
@@ -773,7 +817,6 @@ window.handleImageSelect = function (event) {
   if (file) {
     const reader = new FileReader();
     reader.onload = async function (e) {
-      // Compress image before saving to fix lag
       selectedImageData = await compressImage(e.target.result, 800, 800, 0.7);
       document.getElementById("preview-content").innerHTML = `<img src="${selectedImageData}" style="max-height:100px;">`;
       document.getElementById("media-preview-tray").style.display = "flex";
