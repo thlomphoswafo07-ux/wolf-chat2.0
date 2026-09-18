@@ -115,7 +115,10 @@
         <div id="chat-header">
           <div style="display: flex; align-items: center; gap: 12px;">
             <button id="hamburger-menu-btn" onclick="toggleSidebarMenu()">☰</button>
-            <span id="active-chat-title">Room: General-Alpha</span>
+            <!-- Long-press enabled header area for DM Options -->
+            <div id="chat-header-info" style="cursor: pointer; user-select: none;">
+              <span id="active-chat-title">Room: General-Alpha</span>
+            </div>
           </div>
 
           <div class="header-right-cluster">
@@ -170,11 +173,11 @@
       </div>
     </div>
 
-    <!-- Settings Modal -->
+    <!-- Personal Main Settings Modal -->
     <div id="settings-modal" class="modal-overlay" style="display: none;">
       <div class="modal-box">
         <div class="modal-header">
-          <h3>Settings</h3>
+          <h3>Personal Settings</h3>
           <button class="close-modal-btn" onclick="closeSettingsModal()">✕</button>
         </div>
 
@@ -207,16 +210,16 @@
           <input type="color" id="settings-color-picker" value="#39ff14">
         </div>
 
-        <!-- NEW WORKING WALLPAPER PICKER -->
+        <!-- Personal App Wallpaper (Saved strictly locally on your device) -->
         <div class="input-group">
-          <label>Chat Wallpaper (Gallery)</label>
-          <input type="file" id="settings-wallpaper-file" accept="image/*" onchange="handleCustomWallpaperSelect(event)">
+          <label>Personal App Wallpaper (Gallery)</label>
+          <input type="file" id="settings-wallpaper-file" accept="image/*" onchange="handlePersonalWallpaperSelect(event)">
           
           <label style="margin-top: 10px; display: block;">Or Pick Preset Wallpaper:</label>
           <div class="wallpaper-presets-grid" style="display: flex; gap: 8px; margin-top: 6px;">
-            <button type="button" onclick="selectPresetWallpaper('')" style="padding: 6px 10px; background: #202c33; color: #fff; border: 1px solid #334155; border-radius: 4px; cursor: pointer;">Default Dark</button>
-            <button type="button" onclick="selectPresetWallpaper('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1000')" style="padding: 6px 10px; background: #202c33; color: #00ebff; border: 1px solid #00ebff; border-radius: 4px; cursor: pointer;">Cyber Neon</button>
-            <button type="button" onclick="selectPresetWallpaper('https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?q=80&w=1000')" style="padding: 6px 10px; background: #202c33; color: #39ff14; border: 1px solid #39ff14; border-radius: 4px; cursor: pointer;">Deep Space</button>
+            <button type="button" onclick="selectPersonalPresetWallpaper('')" style="padding: 6px 10px; background: #202c33; color: #fff; border: 1px solid #334155; border-radius: 4px; cursor: pointer;">Default Dark</button>
+            <button type="button" onclick="selectPersonalPresetWallpaper('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1000')" style="padding: 6px 10px; background: #202c33; color: #00ebff; border: 1px solid #00ebff; border-radius: 4px; cursor: pointer;">Cyber Neon</button>
+            <button type="button" onclick="selectPersonalPresetWallpaper('https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?q=80&w=1000')" style="padding: 6px 10px; background: #202c33; color: #39ff14; border: 1px solid #39ff14; border-radius: 4px; cursor: pointer;">Deep Space</button>
           </div>
         </div>
 
@@ -226,6 +229,45 @@
         </div>
 
         <button type="button" class="prime-action-btn" onclick="saveSystemSettings()" style="margin-top: 15px;">Save Settings</button>
+      </div>
+    </div>
+
+    <!-- Long-Press DM Action Pop-up Header Menu -->
+    <div id="dm-longpress-popup" class="modal-overlay" style="display: none;">
+      <div class="modal-box" style="max-width: 300px; text-align: center;">
+        <h3 id="dm-popup-target-name" style="margin-bottom: 15px;">DM Options</h3>
+        <button class="prime-action-btn" onclick="openDMSettingsPage()" style="margin-bottom: 10px;">⚙️ Chat Settings & Customization</button>
+        <button onclick="closeDMLongPressPopup()" style="background: transparent; border: none; color: var(--text-sub); cursor: pointer;">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Dedicated DM Settings Page Modal -->
+    <div id="dm-settings-modal" class="modal-overlay" style="display: none;">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3 id="dm-settings-title">Direct Message Customization</h3>
+          <button class="close-modal-btn" onclick="closeDMSettingsModal()">✕</button>
+        </div>
+
+        <!-- Custom Nickname -->
+        <div class="input-group">
+          <label>Set Custom Nickname for User</label>
+          <input type="text" id="dm-nickname-input" placeholder="Enter custom nickname...">
+        </div>
+
+        <!-- Mute Notifications toggle -->
+        <div class="input-group" style="display: flex; align-items: center; justify-content: space-between;">
+          <label style="margin: 0;">Mute Notifications</label>
+          <input type="checkbox" id="dm-mute-toggle" style="width: auto;">
+        </div>
+
+        <!-- DM Shared Wallpaper (Syncs across both chat members) -->
+        <div class="input-group">
+          <label>Shared DM Chat Wallpaper (Gallery)</label>
+          <input type="file" id="dm-wallpaper-file" accept="image/*" onchange="handleDMWallpaperSelect(event)">
+        </div>
+
+        <button type="button" class="prime-action-btn" onclick="saveDMSettings()" style="margin-top: 15px;">Save Chat Settings</button>
       </div>
     </div>
 
