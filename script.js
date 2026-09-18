@@ -41,6 +41,37 @@ let currentCall = null;
 let localMediaStream = null;
 let activeDmPartnerUid = null;
 
+// Image Compression Helper Function (Fixes Image Sending Lag)
+function compressImage(base64Str, maxWidth = 800, maxHeight = 800, quality = 0.7) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      let width = img.width;
+      let height = img.height;
+
+      if (width > height) {
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+      } else {
+        if (height > maxHeight) {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+  });
+}
+
 // Failsafe Loading Screen
 function hideLoadingScreen() {
   const loadingScreen = document.getElementById("loading-screen");
@@ -417,6 +448,12 @@ function listenForMessages() {
       const msgTime = msg.timestamp ? msg.timestamp.toMillis() : now;
       const isWithinFiveMinutes = (now - msgTime) <= 300000;
 
+      // Formatting Timestamp (Bug Fix: Clean Time Display)
+      const formattedTime = msg.timestamp 
+        ? new Date(msg.timestamp.toMillis()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+        : '';
+      const timeStampHtml = formattedTime ? `<span style="font-size:10px; color:#8696a0; margin-left:8px;">${formattedTime}</span>` : '';
+
       // Touch / Long Press for Mobile
       let touchTimer = null;
       msgElement.addEventListener("touchstart", () => {
@@ -487,12 +524,12 @@ function listenForMessages() {
           ${deleteBtn}
         </div>`;
 
-      let content = `${messageToolbar}${replyBanner}<div class="message-meta"><span class="message-sender" style="color:${msg.color || '#39ff14'}">${msg.sender || 'Anonymous'}</span></div>`;
+      let content = `${messageToolbar}${replyBanner}<div class="message-meta"><span class="message-sender" style="color:${msg.color || '#39ff14'}">${msg.sender || 'Anonymous'}</span>${timeStampHtml}</div>`;
 
       if (msg.audioUrl) {
         content += `<div class="message-body"><audio controls src="${msg.audioUrl}"></audio>${seenBadge}</div>`;
       } else if (msg.imageUrl) {
-        content += `<div class="message-body"><img src="${msg.imageUrl}" style="max-width:200px; border-radius:8px;">${seenBadge}</div>`;
+        content += `<div class="message-body"><img src="${msg.imageUrl}" loading="lazy" style="max-width:200px; border-radius:8px;">${seenBadge}</div>`;
       } else {
         content += `<div class="message-body">${msg.text}${editedTag}${seenBadge}</div>`;
       }
@@ -554,8 +591,8 @@ window.handleCustomPfpSelect = function(event) {
   const file = event.target.files[0];
   if (file) {
     const reader = new FileReader();
-    reader.onload = function(e) {
-      customPfpData = e.target.result;
+    reader.onload = async function(e) {
+      customPfpData = await compressImage(e.target.result, 300, 300, 0.7);
       const preview = document.getElementById("settings-pfp-preview");
       if (preview) preview.src = customPfpData;
     };
@@ -735,8 +772,9 @@ window.handleImageSelect = function (event) {
   const file = event.target.files[0];
   if (file) {
     const reader = new FileReader();
-    reader.onload = function (e) {
-      selectedImageData = e.target.result;
+    reader.onload = async function (e) {
+      // Compress image before saving to fix lag
+      selectedImageData = await compressImage(e.target.result, 800, 800, 0.7);
       document.getElementById("preview-content").innerHTML = `<img src="${selectedImageData}" style="max-height:100px;">`;
       document.getElementById("media-preview-tray").style.display = "flex";
       toggleAttachmentMenu();
