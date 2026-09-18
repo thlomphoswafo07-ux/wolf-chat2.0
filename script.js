@@ -1,5 +1,5 @@
 // =========================================================================
-// WOLF CHAT 2.0 - COMPLETE MESSAGING, CALLS, PROFILE & WALLPAPERS
+// WOLF CHAT 2.0 - MESSAGING, CALLS, PROFILE, DM SETTINGS & LOCAL WALLPAPERS
 // =========================================================================
 
 const firebaseConfig = {
@@ -26,10 +26,11 @@ let isDirectMessage = false;
 let messageUnsubscribe = null;
 let userListUnsubscribe = null;
 let typingUnsubscribe = null;
-let isInitialLoad = true;
+let dmSettingsUnsubscribe = null;
 let selectedImageData = null;
 let customPfpData = null;
 let pendingWallpaperData = null;
+let pendingDmWallpaperData = null;
 let typingTimeout = null;
 let replyingToMessage = null;
 
@@ -41,6 +42,8 @@ let peer = null;
 let currentCall = null;
 let localMediaStream = null;
 let activeDmPartnerUid = null;
+let activeDmPartnerName = "";
+let headerLongPressTimer = null;
 
 // Image Compression Helper
 function compressImage(base64Str, maxWidth = 800, maxHeight = 800, quality = 0.7) {
@@ -88,6 +91,8 @@ setTimeout(hideLoadingScreen, 1500);
 window.addEventListener("DOMContentLoaded", () => {
   if (!auth) return;
 
+  setupHeaderLongPress();
+
   auth.onAuthStateChanged(async (user) => {
     const authScreen = document.getElementById("auth-screen");
     const chatContainer = document.getElementById("chat-container");
@@ -104,12 +109,7 @@ window.addEventListener("DOMContentLoaded", () => {
       if (chatContainer) chatContainer.style.display = "flex";
       
       updateUserHeader();
-      
-      // Load Saved Wallpaper
-      const savedWallpaper = userProfileData.wallpaper || localStorage.getItem("wolf_chat_wallpaper");
-      if (savedWallpaper) {
-        applyWallpaper(savedWallpaper);
-      }
+      refreshActiveWallpaper();
 
       listenForUsers();
       listenForMessages();
@@ -120,6 +120,7 @@ window.addEventListener("DOMContentLoaded", () => {
       if (userListUnsubscribe) userListUnsubscribe();
       if (messageUnsubscribe) messageUnsubscribe();
       if (typingUnsubscribe) typingUnsubscribe();
+      if (dmSettingsUnsubscribe) dmSettingsUnsubscribe();
       if (authScreen) authScreen.style.display = "flex";
       if (chatContainer) chatContainer.style.display = "none";
     }
@@ -142,7 +143,6 @@ async function saveUserToDirectory() {
   const color = userProfileData.color || "#39ff14";
   const pfpIcon = userProfileData.pfpIcon || "🐺";
   const pfpImage = userProfileData.pfpImage || null;
-  const wallpaper = userProfileData.wallpaper || null;
   const isSleepMode = userProfileData.isSleepMode || false;
 
   try {
@@ -152,7 +152,6 @@ async function saveUserToDirectory() {
       color: color,
       pfpIcon: pfpIcon,
       pfpImage: pfpImage,
-      wallpaper: wallpaper,
       isSleepMode: isSleepMode,
       isOnline: !isSleepMode,
       lastSeen: firebase.firestore.FieldValue.serverTimestamp()
@@ -203,14 +202,17 @@ function updateUserHeader() {
   }
 }
 
-// WALLPAPER ENGINE
+// -------------------------------------------------------------------------
+// WALLPAPER ENGINE (LOCAL STORAGE + SHARED DM WALLPAPERS)
+// -------------------------------------------------------------------------
+
 window.handleCustomWallpaperSelect = function (event) {
   const file = event.target.files[0];
   if (file) {
     const reader = new FileReader();
     reader.onload = async function (e) {
       pendingWallpaperData = await compressImage(e.target.result, 1280, 1280, 0.7);
-      alert("Gallery wallpaper selected! Click Save Settings to apply.");
+      alert("Personal wallpaper selected! Click Save Settings to apply.");
     };
     reader.readAsDataURL(file);
   }
@@ -235,6 +237,147 @@ window.applyWallpaper = function (wallpaperUrl) {
     chatMain.style.backgroundColor = "var(--bg-dark)";
   }
 };
+
+function refreshActiveWallpaper() {
+  if (isDirectMessage && currentChatId) {
+    if (dmSettingsUnsubscribe) dmSettingsUnsubscribe();
+
+    dmSettingsUnsubscribe = db.collection("direct_messages")
+      .doc(currentChatId)
+      .onSnapshot((doc) => {
+        if (doc.exists && doc.data().wallpaper) {
+          applyWallpaper(doc.data().wallpaper);
+        } else {
+          applyPersonalWallpaper();
+        }
+      });
+  } else {
+    if (dmSettingsUnsubscribe) dmSettingsUnsubscribe();
+    applyPersonalWallpaper();
+  }
+}
+
+function applyPersonalWallpaper() {
+  const localWallpaper = localStorage.getItem("wolf_chat_wallpaper");
+  applyWallpaper(localWallpaper || "");
+}
+
+// -------------------------------------------------------------------------
+// LONG-PRESS HANDLER & DM CUSTOMIZATION MENU
+// -------------------------------------------------------------------------
+
+function setupHeaderLongPress() {
+  const activeHeader = document.getElementById("active-chat-title") || document.querySelector(".chat-header");
+  if (!activeHeader) return;
+
+  const startPress = () => {
+    if (!isDirectMessage || !activeDmPartnerUid) return;
+    headerLongPressTimer = setTimeout(() => {
+      openDmContextMenu();
+    }, 600);
+  };
+
+  const cancelPress = () => {
+    clearTimeout(headerLongPressTimer);
+  };
+
+  activeHeader.addEventListener("touchstart", startPress, { passive: true });
+  activeHeader.addEventListener("touchend", cancelPress, { passive: true });
+  activeHeader.addEventListener("mousedown", startPress);
+  activeHeader.addEventListener("mouseup", cancelPress);
+  activeHeader.addEventListener("mouseleave", cancelPress);
+}
+
+function openDmContextMenu() {
+  const nickname = localStorage.getItem(`nickname_${activeDmPartnerUid}`) || activeDmPartnerName;
+  const isMuted = localStorage.getItem(`mute_${activeDmPartnerUid}`) === "true";
+
+  const action = confirm(
+    `DM Actions for @${nickname}:\n\n` +
+    `Click [OK] to open DM Customization Settings.\n` +
+    `Click [Cancel] to go back.`
+  );
+
+  if (action) {
+    openDmSettingsModal();
+  }
+}
+
+window.openDmSettingsModal = function () {
+  const modal = document.getElementById("dm-settings-modal");
+  const nicknameInput = document.getElementById("dm-nickname-input");
+  const muteCheckbox = document.getElementById("dm-mute-toggle");
+
+  if (nicknameInput) {
+    nicknameInput.value = localStorage.getItem(`nickname_${activeDmPartnerUid}`) || "";
+  }
+  if (muteCheckbox) {
+    muteCheckbox.checked = localStorage.getItem(`mute_${activeDmPartnerUid}`) === "true";
+  }
+
+  if (modal) modal.style.display = "flex";
+};
+
+window.closeDmSettingsModal = function () {
+  const modal = document.getElementById("dm-settings-modal");
+  if (modal) modal.style.display = "none";
+};
+
+window.handleDmWallpaperSelect = function (event) {
+  const file = event.target.files[0];
+  if (file) {
+    const reader = new FileReader();
+    reader.onload = async function (e) {
+      pendingDmWallpaperData = await compressImage(e.target.result, 1280, 1280, 0.7);
+      alert("Shared DM wallpaper selected! Click Save DM Settings to apply.");
+    };
+    reader.readAsDataURL(file);
+  }
+};
+
+window.saveDmSettings = async function () {
+  if (!isDirectMessage || !currentChatId) return;
+
+  const nicknameInput = document.getElementById("dm-nickname-input");
+  const muteCheckbox = document.getElementById("dm-mute-toggle");
+
+  if (nicknameInput) {
+    const val = nicknameInput.value.trim();
+    if (val !== "") {
+      localStorage.setItem(`nickname_${activeDmPartnerUid}`, val);
+    } else {
+      localStorage.removeItem(`nickname_${activeDmPartnerUid}`);
+    }
+  }
+
+  if (muteCheckbox) {
+    localStorage.setItem(`mute_${activeDmPartnerUid}`, muteCheckbox.checked ? "true" : "false");
+  }
+
+  if (pendingDmWallpaperData !== null) {
+    try {
+      await db.collection("direct_messages").doc(currentChatId).set({
+        wallpaper: pendingDmWallpaperData
+      }, { merge: true });
+      pendingDmWallpaperData = null;
+    } catch (e) {
+      console.error("Failed to save DM wallpaper:", e);
+    }
+  }
+
+  updateDmHeaderDisplay();
+  refreshActiveWallpaper();
+  closeDmSettingsModal();
+  alert("DM settings saved!");
+};
+
+function updateDmHeaderDisplay() {
+  if (!isDirectMessage) return;
+  const customNickname = localStorage.getItem(`nickname_${activeDmPartnerUid}`);
+  const title = customNickname ? `@${customNickname} (${activeDmPartnerName})` : `@${activeDmPartnerName}`;
+  const headerElem = document.getElementById("active-chat-title");
+  if (headerElem) headerElem.innerText = title;
+}
 
 // Typing Indicators
 window.handleInputUpdate = function () {
@@ -314,11 +457,14 @@ function listenForUsers() {
           statusText = "Online";
         }
 
+        const customNickname = localStorage.getItem(`nickname_${user.uid}`);
+        const displayName = customNickname || user.username || 'User';
+
         const avatar = user.pfpImage 
           ? `<img src="${user.pfpImage}" style="width:20px; height:20px; border-radius:50%; vertical-align:middle; margin-right:5px;">`
           : `${user.pfpIcon || '🐺'} `;
 
-        userBtn.innerHTML = `${statusDot} ${avatar} <span style="color:${user.color || '#fff'}">${user.username || 'User'}</span> <small style="font-size:9px; color:#aaa; margin-left: auto;">${statusText}</small>`;
+        userBtn.innerHTML = `${statusDot} ${avatar} <span style="color:${user.color || '#fff'}">${displayName}</span> <small style="font-size:9px; color:#aaa; margin-left: auto;">${statusText}</small>`;
         userBtn.onclick = () => openDirectMessage(user.uid, user.username, user);
         dmUsersList.appendChild(userBtn);
       }
@@ -330,9 +476,11 @@ function listenForUsers() {
 window.switchChannel = function (channelName) {
   isDirectMessage = false;
   activeDmPartnerUid = null;
+  activeDmPartnerName = "";
   currentChatId = channelName;
   cancelReply();
   document.getElementById("active-chat-title").innerText = `Room: ${channelName}`;
+  refreshActiveWallpaper();
   listenForMessages();
   listenForTyping();
   toggleSidebarMenu();
@@ -341,18 +489,13 @@ window.switchChannel = function (channelName) {
 window.openDirectMessage = function (targetUid, targetUsername, targetUserData = null) {
   isDirectMessage = true;
   activeDmPartnerUid = targetUid;
+  activeDmPartnerName = targetUsername;
   const dmRoomId = [currentUser.uid, targetUid].sort().join("_");
   currentChatId = dmRoomId;
   cancelReply();
 
-  let headerStatus = "@" + targetUsername;
-  if (targetUserData) {
-    if (targetUserData.isSleepMode) headerStatus += " (Sleeping 🌙)";
-    else if (targetUserData.isOnline) headerStatus += " (Online)";
-    else headerStatus += " (Offline)";
-  }
-
-  document.getElementById("active-chat-title").innerText = headerStatus;
+  updateDmHeaderDisplay();
+  refreshActiveWallpaper();
   listenForMessages();
   listenForTyping();
   toggleSidebarMenu();
@@ -458,8 +601,6 @@ function listenForMessages() {
 
   const messagesContainer = document.getElementById("messages");
   if (!db) return;
-
-  isInitialLoad = true;
 
   const collectionRef = isDirectMessage
     ? db.collection("direct_messages").doc(currentChatId).collection("messages")
@@ -578,7 +719,6 @@ function listenForMessages() {
     });
 
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    isInitialLoad = false;
   });
 }
 
@@ -653,9 +793,9 @@ window.saveSystemSettings = async function () {
     }
 
     if (pendingWallpaperData !== null) {
-      userProfileData.wallpaper = pendingWallpaperData;
       localStorage.setItem("wolf_chat_wallpaper", pendingWallpaperData);
-      applyWallpaper(pendingWallpaperData);
+      pendingWallpaperData = null;
+      refreshActiveWallpaper();
     }
 
     userProfileData = {
@@ -670,7 +810,7 @@ window.saveSystemSettings = async function () {
     await saveUserToDirectory();
     updateUserHeader();
     closeSettingsModal();
-    alert("Settings & Wallpaper updated!");
+    alert("System Settings updated!");
   } catch (err) {
     alert("Save error: " + err.message);
   }
