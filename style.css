@@ -310,6 +310,7 @@ body {
   display: flex;
   flex-direction: column;
   background: var(--bg-dark);
+  position: relative;
 }
 
 #chat-header {
@@ -320,6 +321,7 @@ body {
   justify-content: space-between;
   padding: 0 15px;
   border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
 }
 
 #hamburger-menu-btn {
@@ -338,6 +340,7 @@ body {
 .header-right-cluster {
   display: flex;
   align-items: center;
+  gap: 10px;
 }
 
 #user-display-container {
@@ -392,14 +395,16 @@ body {
   font-weight: bold;
 }
 
-/* Attachment HUD & Input (Flex Aligned) */
-#input-area-wrapper {
+/* Attachment HUD & Input (Flex Aligned & Always Anchored at Bottom) */
+#input-area-wrapper, .input-bar {
   background: var(--bg-input);
   padding: 10px 15px;
   display: flex;
   align-items: center;
   gap: 10px;
   border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+  width: 100%;
 }
 
 .whatsapp-input-pill-container {
@@ -409,9 +414,10 @@ body {
   padding: 5px 15px;
   display: flex;
   align-items: center;
+  gap: 8px;
 }
 
-.whatsapp-input-pill-container input {
+.whatsapp-input-pill-container input, #msg-input {
   width: 100%;
   background: transparent;
   border: none;
@@ -446,20 +452,43 @@ body {
   flex-shrink: 0;
 }
 
+/* Media Preview & Attachment Drawer */
+#media-preview-tray {
+  background: var(--bg-card);
+  padding: 8px 15px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+#attachment-drawer-hud {
+  position: absolute;
+  bottom: 70px;
+  left: 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 10px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+  z-index: 50;
+}
+
 /* ==========================================
    9. MODAL OVERLAYS & CALL SCREEN
    ========================================== */
-.modal-overlay {
+.modal-overlay, #call-screen-overlay {
   position: fixed;
   top: 0;
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: rgba(0, 0, 0, 0.75);
+  background: rgba(0, 0, 0, 0.85);
   z-index: 2000;
   display: flex;
   justify-content: center;
   align-items: center;
+  flex-direction: column;
 }
 
 .modal-box {
@@ -490,6 +519,24 @@ body {
   cursor: pointer;
 }
 
+/* Call Overlay Video Container */
+.video-grid-container {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.video-grid-container video {
+  width: 300px;
+  height: 220px;
+  background: #000;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid var(--primary-cyan);
+}
+
 /* ==========================================
    10. REACTION PICKER (INSTAGRAM STYLE - FAST HUD FIX)
    ========================================== */
@@ -504,7 +551,6 @@ body {
   top: -32px;
   opacity: 0;
   pointer-events: none;
-  /* Reduced 1.53s hover delay down to 0.15s for instant pop up */
   transition: opacity 0.2s ease 0.15s, transform 0.2s ease 0.15s;
   transform: translateY(6px);
   z-index: 10;
