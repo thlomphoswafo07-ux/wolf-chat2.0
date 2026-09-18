@@ -1,10 +1,8 @@
 /* ==========================================
    1. FONTS IMPORT & CUSTOM @FONT-FACE
    ========================================== */
-/* Google Fonts for headers (Orbitron) and interface text (Inter) */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@600;800;900&display=swap');
 
-/* Custom Web Font Setup (Place your font files inside a 'fonts' folder) */
 @font-face {
   font-family: 'WolfFont';
   src: url('fonts/WolfFont.woff2') format('woff2'),
@@ -127,6 +125,7 @@ body {
   height: 100%;
   background: radial-gradient(circle at center, rgba(0, 235, 255, 0.05) 0%, rgba(11, 20, 26, 1) 80%);
   z-index: 1;
+  pointer-events: none;
 }
 
 /* ==========================================
@@ -309,13 +308,17 @@ body {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: var(--bg-dark);
+  background-color: var(--bg-dark);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
   position: relative;
 }
 
 #chat-header {
   height: 60px;
-  background: var(--bg-input);
+  background: rgba(32, 44, 51, 0.95);
+  backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -361,11 +364,11 @@ body {
 }
 
 /* ==========================================
-   8. MESSAGES & MEDIA TRAYS (FIXED SCROLL & LAYOUT)
+   8. MESSAGES & MEDIA TRAYS
    ========================================== */
 #messages {
-  flex: 1;            /* Fills vertical space between header & input */
-  overflow-y: auto;   /* Enables scrollbar when messages exceed screen height */
+  flex: 1;
+  overflow-y: auto;
   padding: 15px;
   display: flex;
   flex-direction: column;
@@ -375,7 +378,8 @@ body {
 .message-node {
   max-width: 65%;
   align-self: flex-start;
-  background: var(--bg-input);
+  background: rgba(32, 44, 51, 0.92);
+  backdrop-filter: blur(4px);
   padding: 8px 12px;
   border-radius: 8px;
   font-size: 14px;
@@ -386,7 +390,7 @@ body {
 
 .message-node.my-message {
   align-self: flex-end;
-  background: #005c4b;
+  background: rgba(0, 92, 75, 0.92);
 }
 
 .message-meta {
@@ -395,9 +399,10 @@ body {
   font-weight: bold;
 }
 
-/* Attachment HUD & Input (Flex Aligned & Always Anchored at Bottom) */
+/* Input Area Fixed to Bottom */
 #input-area-wrapper, .input-bar {
-  background: var(--bg-input);
+  background: rgba(32, 44, 51, 0.95);
+  backdrop-filter: blur(8px);
   padding: 10px 15px;
   display: flex;
   align-items: center;
@@ -498,6 +503,8 @@ body {
   border-radius: 12px;
   padding: 20px;
   border: 1px solid var(--border-color);
+  max-height: 90vh;
+  overflow-y: auto;
 }
 
 .modal-header {
@@ -519,7 +526,7 @@ body {
   cursor: pointer;
 }
 
-/* Call Overlay Video Container */
+/* Call Overlay */
 .video-grid-container {
   display: flex;
   gap: 15px;
@@ -538,7 +545,7 @@ body {
 }
 
 /* ==========================================
-   10. REACTION PICKER (INSTAGRAM STYLE - FAST HUD FIX)
+   10. REACTION PICKER
    ========================================== */
 .reaction-picker-hud {
   display: flex !important;
