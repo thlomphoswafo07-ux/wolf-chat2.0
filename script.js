@@ -147,6 +147,7 @@ async function saveUserToDirectory() {
   const pfpIcon = userProfileData.pfpIcon || "🐺";
   const pfpImage = userProfileData.pfpImage || null;
   const isSleepMode = userProfileData.isSleepMode || false;
+  const bio = userProfileData.bio || "Welcome to my Wolf Chat profile!";
 
   try {
     await db.collection("users").doc(currentUser.uid).set({
@@ -155,6 +156,7 @@ async function saveUserToDirectory() {
       color: color,
       pfpIcon: pfpIcon,
       pfpImage: pfpImage,
+      bio: bio,
       isSleepMode: isSleepMode,
       isOnline: !isSleepMode,
       lastSeen: firebase.firestore.FieldValue.serverTimestamp()
@@ -206,8 +208,97 @@ function updateUserHeader() {
 }
 
 // -------------------------------------------------------------------------
-// ITEM 3: FOLLOW SYSTEM & NOTIFICATION FEED
+// ITEM 3 & 4: FOLLOW SYSTEM, NOTIFICATIONS & USER PROFILE CARD
 // -------------------------------------------------------------------------
+
+window.openUserProfileModal = async function (targetUserId) {
+  if (!db) return;
+  const modal = document.getElementById("user-profile-modal");
+  if (!modal) return;
+
+  try {
+    const doc = await db.collection("users").doc(targetUserId).get();
+    if (!doc.exists) return;
+
+    const userData = doc.data();
+
+    // Populate profile details
+    const pfpElem = document.getElementById("profile-modal-pfp");
+    const nameElem = document.getElementById("profile-modal-name");
+    const bioElem = document.getElementById("profile-modal-bio");
+    const statusElem = document.getElementById("profile-modal-status");
+
+    if (pfpElem) {
+      if (userData.pfpImage) {
+        pfpElem.innerHTML = `<img src="${userData.pfpImage}" style="width:70px; height:70px; border-radius:50%; object-fit:cover; border:2px solid ${userData.color || '#39ff14'};">`;
+      } else {
+        pfpElem.innerText = userData.pfpIcon || "🐺";
+        pfpElem.style.fontSize = "48px";
+      }
+    }
+
+    if (nameElem) {
+      nameElem.innerText = userData.username || "Wolf User";
+      nameElem.style.color = userData.color || "#39ff14";
+    }
+
+    if (bioElem) {
+      bioElem.innerText = userData.bio || "No bio set.";
+    }
+
+    if (statusElem) {
+      if (userData.isSleepMode) {
+        statusElem.innerText = "Sleeping 🌙";
+        statusElem.style.color = "#ffaa00";
+      } else if (userData.isOnline) {
+        statusElem.innerText = "Online 🟢";
+        statusElem.style.color = "#39ff14";
+      } else {
+        statusElem.innerText = "Offline ⚪";
+        statusElem.style.color = "#888";
+      }
+    }
+
+    // Fetch Followers & Following Counts
+    const followersSnap = await db.collection("users").doc(targetUserId).collection("followers").get();
+    const followingSnap = await db.collection("users").doc(targetUserId).collection("following").get();
+
+    const followersCountElem = document.getElementById(`follower-count-${targetUserId}`) || document.getElementById("profile-followers-count");
+    const followingCountElem = document.getElementById("profile-following-count");
+
+    if (followersCountElem) followersCountElem.innerText = followersSnap.size;
+    if (followingCountElem) followingCountElem.innerText = followingSnap.size;
+
+    // Follow Button Setup
+    const actionContainer = document.getElementById("profile-modal-actions");
+    if (actionContainer && currentUser) {
+      if (currentUser.uid === targetUserId) {
+        actionContainer.innerHTML = `<button onclick="closeUserProfileModal(); openSettingsModal();" style="padding:8px 16px; background:#00ebff; color:#000; border:none; border-radius:6px; font-weight:bold; cursor:pointer;">Edit My Profile</button>`;
+      } else {
+        const isFollowingDoc = await db.collection("users").doc(currentUser.uid).collection("following").doc(targetUserId).get();
+        const isFollowing = isFollowingDoc.exists;
+
+        actionContainer.innerHTML = `
+          <button id="follow-btn-${targetUserId}" onclick="toggleFollowUser('${targetUserId}')" style="padding:8px 16px; background:${isFollowing ? '#334155' : '#39ff14'}; color:${isFollowing ? '#fff' : '#000'}; border:none; border-radius:6px; font-weight:bold; cursor:pointer; margin-right:8px;">
+            ${isFollowing ? 'Unfollow' : 'Follow'}
+          </button>
+          <button onclick="closeUserProfileModal(); openDirectMessage('${targetUserId}', '${userData.username}')" style="padding:8px 16px; background:#00ebff; color:#000; border:none; border-radius:6px; font-weight:bold; cursor:pointer;">
+            Message
+          </button>
+        `;
+      }
+    }
+
+    modal.style.display = "flex";
+  } catch (err) {
+    console.error("Error opening profile:", err);
+  }
+};
+
+window.closeUserProfileModal = function () {
+  const modal = document.getElementById("user-profile-modal");
+  if (modal) modal.style.display = "none";
+};
 
 window.toggleFollowUser = async function (targetUserId) {
   if (!currentUser || !db || currentUser.uid === targetUserId) return;
@@ -224,17 +315,25 @@ window.toggleFollowUser = async function (targetUserId) {
       // Unfollow
       await myFollowingRef.delete();
       await targetFollowersRef.delete();
-      if (followBtn) followBtn.textContent = "Follow";
+      if (followBtn) {
+        followBtn.textContent = "Follow";
+        followBtn.style.background = "#39ff14";
+        followBtn.style.color = "#000";
+      }
       updateFollowerCountUI(targetUserId, -1);
     } else {
       // Follow
       await myFollowingRef.set({ timestamp: firebase.firestore.FieldValue.serverTimestamp() });
       await targetFollowersRef.set({ timestamp: firebase.firestore.FieldValue.serverTimestamp() });
       
-      if (followBtn) followBtn.textContent = "Unfollow";
+      if (followBtn) {
+        followBtn.textContent = "Unfollow";
+        followBtn.style.background = "#334155";
+        followBtn.style.color = "#fff";
+      }
       updateFollowerCountUI(targetUserId, 1);
 
-      // Create Notification for Target User
+      // Notification
       const myName = userProfileData.username || currentUser.displayName || "Someone";
       await createNotification(targetUserId, "follow", `${myName} started following you!`);
     }
@@ -244,7 +343,7 @@ window.toggleFollowUser = async function (targetUserId) {
 };
 
 function updateFollowerCountUI(userId, change) {
-  const elem = document.getElementById(`follower-count-${userId}`);
+  const elem = document.getElementById("profile-followers-count");
   if (elem) {
     let current = parseInt(elem.textContent) || 0;
     elem.textContent = Math.max(0, current + change);
@@ -348,7 +447,7 @@ function clearNotificationBadge() {
 }
 
 // -------------------------------------------------------------------------
-// WALLPAPER ENGINE (LOCAL STORAGE + SHARED DM WALLPAPERS)
+// WALLPAPER ENGINE
 // -------------------------------------------------------------------------
 
 window.handleCustomWallpaperSelect = function (event) {
@@ -609,7 +708,7 @@ function listenForUsers() {
           : `${user.pfpIcon || '🐺'} `;
 
         userBtn.innerHTML = `${statusDot} ${avatar} <span style="color:${user.color || '#fff'}">${displayName}</span> <small style="font-size:9px; color:#aaa; margin-left: auto;">${statusText}</small>`;
-        userBtn.onclick = () => openDirectMessage(user.uid, user.username, user);
+        userBtn.onclick = () => openUserProfileModal(user.uid);
         dmUsersList.appendChild(userBtn);
       }
     });
@@ -846,7 +945,11 @@ function listenForMessages() {
           ${deleteBtn}
         </div>`;
 
-      let content = `${messageToolbar}${replyBanner}<div class="message-meta"><span class="message-sender" style="color:${msg.color || '#39ff14'}">${msg.sender || 'Anonymous'}</span>${timeStampHtml}</div>`;
+      const senderClickable = msg.senderId 
+        ? `<span class="message-sender" onclick="openUserProfileModal('${msg.senderId}')" style="color:${msg.color || '#39ff14'}; cursor:pointer; text-decoration:underline;">${msg.sender || 'Anonymous'}</span>`
+        : `<span class="message-sender" style="color:${msg.color || '#39ff14'}">${msg.sender || 'Anonymous'}</span>`;
+
+      let content = `${messageToolbar}${replyBanner}<div class="message-meta">${senderClickable}${timeStampHtml}</div>`;
 
       if (msg.audioUrl) {
         content += `<div class="message-body"><audio controls src="${msg.audioUrl}"></audio>${seenBadge}</div>`;
@@ -923,6 +1026,7 @@ window.handleCustomPfpSelect = function(event) {
 
 window.saveSystemSettings = async function () {
   const newUsername = document.getElementById("settings-username-input").value.trim();
+  const newBio = document.getElementById("settings-bio-input")?.value.trim();
   const newIcon = document.getElementById("settings-pfp-select")?.value;
   const newColor = document.getElementById("settings-color-picker")?.value;
   const sleepToggle = document.getElementById("settings-sleep-toggle")?.checked;
@@ -945,6 +1049,7 @@ window.saveSystemSettings = async function () {
     userProfileData = {
       ...userProfileData,
       username: updatedName,
+      bio: newBio !== undefined ? newBio : (userProfileData.bio || "Welcome to my Wolf Chat profile!"),
       pfpIcon: newIcon || "🐺",
       pfpImage: customPfpData || userProfileData.pfpImage || null,
       color: newColor || "#39ff14",
@@ -1178,6 +1283,9 @@ window.openSettingsModal = function () {
     modal.style.display = "flex";
     if (document.getElementById("settings-sleep-toggle")) {
       document.getElementById("settings-sleep-toggle").checked = userProfileData.isSleepMode || false;
+    }
+    if (document.getElementById("settings-bio-input")) {
+      document.getElementById("settings-bio-input").value = userProfileData.bio || "";
     }
   }
 };
