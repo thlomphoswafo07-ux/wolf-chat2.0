@@ -46,6 +46,24 @@ let activeDmPartnerUid = null;
 let activeDmPartnerName = "";
 let headerLongPressTimer = null;
 
+// Sound Synthesizer via Web Audio API
+function playSystemTone(frequency = 440, duration = 0.15) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = frequency;
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+    osc.start();
+    osc.stop(ctx.currentTime + duration);
+  } catch (e) {
+    console.log("Audio not allowed yet");
+  }
+}
+
 // Image Compression Helper
 function compressImage(base64Str, maxWidth = 800, maxHeight = 800, quality = 0.7) {
   return new Promise((resolve) => {
@@ -77,7 +95,7 @@ function compressImage(base64Str, maxWidth = 800, maxHeight = 800, quality = 0.7
   });
 }
 
-// Failsafe Loading Screen
+// Failsafe Loading Screen (Approx 3 seconds max)
 function hideLoadingScreen() {
   const loadingScreen = document.getElementById("loading-screen");
   if (loadingScreen) {
@@ -86,7 +104,7 @@ function hideLoadingScreen() {
     setTimeout(() => { loadingScreen.style.display = "none"; }, 500);
   }
 }
-setTimeout(hideLoadingScreen, 1500);
+setTimeout(hideLoadingScreen, 2800);
 
 // App Initialization
 window.addEventListener("DOMContentLoaded", () => {
@@ -208,7 +226,31 @@ function updateUserHeader() {
 }
 
 // -------------------------------------------------------------------------
-// ITEM 3 & 4: FOLLOW SYSTEM, NOTIFICATIONS & USER PROFILE CARD
+// OAUTH SOCIAL AUTHENTICATION
+// -------------------------------------------------------------------------
+
+window.signInWithGoogle = async function () {
+  if (!auth) return;
+  const provider = new firebase.auth.GoogleAuthProvider();
+  try {
+    await auth.signInWithPopup(provider);
+  } catch (err) {
+    alert("Google sign in failed: " + err.message);
+  }
+};
+
+window.signInWithFacebook = async function () {
+  if (!auth) return;
+  const provider = new firebase.auth.FacebookAuthProvider();
+  try {
+    await auth.signInWithPopup(provider);
+  } catch (err) {
+    alert("Facebook sign in failed: " + err.message);
+  }
+};
+
+// -------------------------------------------------------------------------
+// FOLLOW SYSTEM & NOTIFICATIONS
 // -------------------------------------------------------------------------
 
 window.openUserProfileModal = async function (targetUserId) {
@@ -222,7 +264,6 @@ window.openUserProfileModal = async function (targetUserId) {
 
     const userData = doc.data();
 
-    // Populate profile details
     const pfpElem = document.getElementById("profile-modal-pfp");
     const nameElem = document.getElementById("profile-modal-name");
     const bioElem = document.getElementById("profile-modal-bio");
@@ -259,27 +300,25 @@ window.openUserProfileModal = async function (targetUserId) {
       }
     }
 
-    // Fetch Followers & Following Counts
     const followersSnap = await db.collection("users").doc(targetUserId).collection("followers").get();
     const followingSnap = await db.collection("users").doc(targetUserId).collection("following").get();
 
-    const followersCountElem = document.getElementById(`follower-count-${targetUserId}`) || document.getElementById("profile-followers-count");
+    const followersCountElem = document.getElementById("profile-followers-count");
     const followingCountElem = document.getElementById("profile-following-count");
 
     if (followersCountElem) followersCountElem.innerText = followersSnap.size;
     if (followingCountElem) followingCountElem.innerText = followingSnap.size;
 
-    // Follow Button Setup
     const actionContainer = document.getElementById("profile-modal-actions");
     if (actionContainer && currentUser) {
       if (currentUser.uid === targetUserId) {
-        actionContainer.innerHTML = `<button onclick="closeUserProfileModal(); openSettingsModal();" style="padding:8px 16px; background:#00ebff; color:#000; border:none; border-radius:6px; font-weight:bold; cursor:pointer;">Edit My Profile</button>`;
+        actionContainer.innerHTML = `<button onclick="closeUserProfileModal(); openSettingsModal();" style="padding:8px 16px; background:#00ebff; color:#000; border:none; border-radius:6px; font-weight:bold; cursor:pointer;">Edit Profile</button>`;
       } else {
         const isFollowingDoc = await db.collection("users").doc(currentUser.uid).collection("following").doc(targetUserId).get();
         const isFollowing = isFollowingDoc.exists;
 
         actionContainer.innerHTML = `
-          <button id="follow-btn-${targetUserId}" onclick="toggleFollowUser('${targetUserId}')" style="padding:8px 16px; background:${isFollowing ? '#334155' : '#39ff14'}; color:${isFollowing ? '#fff' : '#000'}; border:none; border-radius:6px; font-weight:bold; cursor:pointer; margin-right:8px;">
+          <button id="follow-btn-${targetUserId}" onclick="toggleFollowUser('${targetUserId}')" style="padding:8px 16px; background:${isFollowing ? '#334155' : '#39ff14'}; color:${isFollowing ? '#fff' : '#000'}; border:none; border-radius:6px; font-weight:bold; cursor:pointer;">
             ${isFollowing ? 'Unfollow' : 'Follow'}
           </button>
           <button onclick="closeUserProfileModal(); openDirectMessage('${targetUserId}', '${userData.username}')" style="padding:8px 16px; background:#00ebff; color:#000; border:none; border-radius:6px; font-weight:bold; cursor:pointer;">
@@ -312,7 +351,6 @@ window.toggleFollowUser = async function (targetUserId) {
     const followBtn = document.getElementById(`follow-btn-${targetUserId}`);
 
     if (doc.exists) {
-      // Unfollow
       await myFollowingRef.delete();
       await targetFollowersRef.delete();
       if (followBtn) {
@@ -320,9 +358,8 @@ window.toggleFollowUser = async function (targetUserId) {
         followBtn.style.background = "#39ff14";
         followBtn.style.color = "#000";
       }
-      updateFollowerCountUI(targetUserId, -1);
+      updateFollowerCountUI(-1);
     } else {
-      // Follow
       await myFollowingRef.set({ timestamp: firebase.firestore.FieldValue.serverTimestamp() });
       await targetFollowersRef.set({ timestamp: firebase.firestore.FieldValue.serverTimestamp() });
       
@@ -331,9 +368,8 @@ window.toggleFollowUser = async function (targetUserId) {
         followBtn.style.background = "#334155";
         followBtn.style.color = "#fff";
       }
-      updateFollowerCountUI(targetUserId, 1);
+      updateFollowerCountUI(1);
 
-      // Notification
       const myName = userProfileData.username || currentUser.displayName || "Someone";
       await createNotification(targetUserId, "follow", `${myName} started following you!`);
     }
@@ -342,7 +378,7 @@ window.toggleFollowUser = async function (targetUserId) {
   }
 };
 
-function updateFollowerCountUI(userId, change) {
+function updateFollowerCountUI(change) {
   const elem = document.getElementById("profile-followers-count");
   if (elem) {
     let current = parseInt(elem.textContent) || 0;
@@ -388,10 +424,10 @@ function loadNotifications() {
     .collection("notifications")
     .orderBy("timestamp", "desc")
     .limit(20)
-    .onSnapshot((snapshot) => {
+    .get().then((snapshot) => {
       listContainer.innerHTML = "";
       if (snapshot.empty) {
-        listContainer.innerHTML = `<div style="padding: 10px; color: #888; text-align: center;">No new notifications</div>`;
+        listContainer.innerHTML = `<div style="padding: 10px; color: #888; text-align: center;">No notifications</div>`;
         return;
       }
 
@@ -447,7 +483,7 @@ function clearNotificationBadge() {
 }
 
 // -------------------------------------------------------------------------
-// WALLPAPER ENGINE
+// LOCAL VS. DM SHARED WALLPAPER ENGINE
 // -------------------------------------------------------------------------
 
 window.handleCustomWallpaperSelect = function (event) {
@@ -456,7 +492,7 @@ window.handleCustomWallpaperSelect = function (event) {
     const reader = new FileReader();
     reader.onload = async function (e) {
       pendingWallpaperData = await compressImage(e.target.result, 1280, 1280, 0.7);
-      alert("Personal wallpaper selected! Click Save Settings to apply.");
+      alert("Personal wallpaper staged! Click Save Settings to store strictly on this device.");
     };
     reader.readAsDataURL(file);
   }
@@ -464,7 +500,7 @@ window.handleCustomWallpaperSelect = function (event) {
 
 window.selectPresetWallpaper = function (url) {
   pendingWallpaperData = url;
-  alert("Preset wallpaper selected! Click Save Settings to apply.");
+  alert("Preset wallpaper staged! Click Save Settings to apply locally.");
 };
 
 window.applyWallpaper = function (wallpaperUrl) {
@@ -511,13 +547,13 @@ function applyPersonalWallpaper() {
 // -------------------------------------------------------------------------
 
 function setupHeaderLongPress() {
-  const activeHeader = document.getElementById("active-chat-title") || document.querySelector(".chat-header");
+  const activeHeader = document.getElementById("chat-header-info");
   if (!activeHeader) return;
 
   const startPress = () => {
     if (!isDirectMessage || !activeDmPartnerUid) return;
     headerLongPressTimer = setTimeout(() => {
-      openDmContextMenu();
+      openDmSettingsModal();
     }, 600);
   };
 
@@ -530,20 +566,6 @@ function setupHeaderLongPress() {
   activeHeader.addEventListener("mousedown", startPress);
   activeHeader.addEventListener("mouseup", cancelPress);
   activeHeader.addEventListener("mouseleave", cancelPress);
-}
-
-function openDmContextMenu() {
-  const nickname = localStorage.getItem(`nickname_${activeDmPartnerUid}`) || activeDmPartnerName;
-
-  const action = confirm(
-    `DM Actions for @${nickname}:\n\n` +
-    `Click [OK] to open DM Customization Settings.\n` +
-    `Click [Cancel] to go back.`
-  );
-
-  if (action) {
-    openDmSettingsModal();
-  }
 }
 
 window.openDmSettingsModal = function () {
@@ -622,7 +644,10 @@ function updateDmHeaderDisplay() {
   if (headerElem) headerElem.innerText = title;
 }
 
-// Typing Indicators
+// -------------------------------------------------------------------------
+// TYPING INDICATORS & USER DIRECTORY
+// -------------------------------------------------------------------------
+
 window.handleInputUpdate = function () {
   const input = document.getElementById("msg-input");
   const counter = document.getElementById("char-counter-node");
@@ -675,7 +700,6 @@ function listenForTyping() {
     });
 }
 
-// Users Directory
 function listenForUsers() {
   const dmUsersList = document.getElementById("dm-users-list");
   if (!dmUsersList || !db) return;
@@ -707,7 +731,7 @@ function listenForUsers() {
           ? `<img src="${user.pfpImage}" style="width:20px; height:20px; border-radius:50%; vertical-align:middle; margin-right:5px;">`
           : `${user.pfpIcon || '🐺'} `;
 
-        userBtn.innerHTML = `${statusDot} ${avatar} <span style="color:${user.color || '#fff'}">${displayName}</span> <small style="font-size:9px; color:#aaa; margin-left: auto;">${statusText}</small>`;
+        userBtn.innerHTML = `${statusDot} ${avatar} <span style="color:${user.color || '#fff'}; flex: 1;">${displayName}</span> <small style="font-size:9px; color:#aaa;">${statusText}</small>`;
         userBtn.onclick = () => openUserProfileModal(user.uid);
         dmUsersList.appendChild(userBtn);
       }
@@ -715,7 +739,10 @@ function listenForUsers() {
   });
 }
 
-// Channel Routing
+// -------------------------------------------------------------------------
+// CHANNEL ROUTING & REAL-TIME MESSAGE SYNC
+// -------------------------------------------------------------------------
+
 window.switchChannel = function (channelName) {
   isDirectMessage = false;
   activeDmPartnerUid = null;
@@ -729,7 +756,7 @@ window.switchChannel = function (channelName) {
   toggleSidebarMenu();
 };
 
-window.openDirectMessage = function (targetUid, targetUsername, targetUserData = null) {
+window.openDirectMessage = function (targetUid, targetUsername) {
   isDirectMessage = true;
   activeDmPartnerUid = targetUid;
   activeDmPartnerName = targetUsername;
@@ -744,7 +771,6 @@ window.openDirectMessage = function (targetUid, targetUsername, targetUserData =
   toggleSidebarMenu();
 };
 
-// Reactions Engine
 window.toggleReaction = async function (docId, emoji) {
   if (!currentUser || !db) return;
 
@@ -774,7 +800,6 @@ window.toggleReaction = async function (docId, emoji) {
   }
 };
 
-// Message Edit & Delete Functions
 window.editMessage = async function (msgId, currentText) {
   const newText = prompt("Edit your message:", currentText);
   if (newText === null || newText.trim() === "" || newText.trim() === currentText) return;
@@ -794,7 +819,7 @@ window.editMessage = async function (msgId, currentText) {
 };
 
 window.deleteMessage = async function (msgId) {
-  if (!confirm("Are you sure you want to delete this message for everyone?")) return;
+  if (!confirm("Are you sure you want to delete this message?")) return;
 
   const collectionRef = isDirectMessage
     ? db.collection("direct_messages").doc(currentChatId).collection("messages").doc(msgId)
@@ -807,7 +832,6 @@ window.deleteMessage = async function (msgId) {
   }
 };
 
-// Threaded Replies
 window.setReplyTarget = function (senderName, messageText) {
   replyingToMessage = { sender: senderName, text: messageText };
   
@@ -816,7 +840,7 @@ window.setReplyTarget = function (senderName, messageText) {
     tray = document.createElement("div");
     tray.id = "reply-preview-tray";
     tray.style.cssText = "background:#111b21; border-left:3px solid #00ebff; padding:6px 12px; margin:5px 10px; display:flex; justify-content:space-between; align-items:center; border-radius:4px; font-size:12px;";
-    const inputBar = document.querySelector(".input-bar") || document.getElementById("msg-input")?.parentElement;
+    const inputBar = document.querySelector("#input-area-wrapper");
     if (inputBar && inputBar.parentNode) {
       inputBar.parentNode.insertBefore(tray, inputBar);
     }
@@ -838,7 +862,6 @@ window.cancelReply = function () {
   if (tray) tray.style.display = "none";
 };
 
-// Message Listener
 function listenForMessages() {
   if (messageUnsubscribe) messageUnsubscribe();
 
@@ -860,6 +883,9 @@ function listenForMessages() {
 
       if (currentUser && msg.senderId !== currentUser.uid && !msg.seen) {
         collectionRef.doc(msgId).update({ seen: true });
+        if (document.getElementById("settings-audio-msg-toggle")?.checked) {
+          playSystemTone(880, 0.1);
+        }
       }
 
       const msgElement = document.createElement("div");
@@ -969,7 +995,10 @@ function listenForMessages() {
   });
 }
 
-// Send Message Engine
+// -------------------------------------------------------------------------
+// MESSAGE DISPATCH & SYSTEM SETTINGS
+// -------------------------------------------------------------------------
+
 window.sendMessage = async function () {
   const input = document.getElementById("msg-input");
   const text = input ? input.value.trim() : "";
@@ -1010,7 +1039,6 @@ window.sendMessage = async function () {
   }
 };
 
-// Profile & Media
 window.handleCustomPfpSelect = function(event) {
   const file = event.target.files[0];
   if (file) {
@@ -1065,7 +1093,10 @@ window.saveSystemSettings = async function () {
   }
 };
 
-// PeerJS Calls
+// -------------------------------------------------------------------------
+// PEER CALLS, MEDIA & AUTH CONTROLS
+// -------------------------------------------------------------------------
+
 function initPeerConnection() {
   if (!currentUser || peer || typeof Peer === "undefined") return;
 
@@ -1073,6 +1104,9 @@ function initPeerConnection() {
     peer = new Peer(currentUser.uid);
 
     peer.on('call', async (incomingCall) => {
+      if (document.getElementById("settings-audio-call-toggle")?.checked) {
+        playSystemTone(523.25, 0.4);
+      }
       const accept = confirm("Incoming Call! Answer?");
       if (accept) {
         localMediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -1098,7 +1132,7 @@ function initPeerConnection() {
 
 window.startCall = async function (isVideo = true) {
   if (!isDirectMessage || !activeDmPartnerUid) {
-    alert("Select a user under Direct Messages to start a call!");
+    alert("Select a direct message user to start a call.");
     return;
   }
 
@@ -1132,7 +1166,6 @@ window.endActiveCall = function () {
   localMediaStream = null;
 };
 
-// Voice Recording & Drawers
 window.toggleVoiceRecording = async function () {
   const micBtn = document.getElementById("mic-record-btn");
 
